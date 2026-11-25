@@ -1,4 +1,4 @@
-import { HEAP, estimate, fmtBytes, parseGcLine, parseMpy, withSuperloop } from './estimate.js';
+import { HEAP, estimate, fmtBytes, parseGcLines, parseMpy, withSuperloop } from './estimate.js';
 
 /**
  * Memory check view: estimate, verdict, where the space goes, ways to cut, and calibration
@@ -129,7 +129,7 @@ export function createHeapView(root, { loadSource, build, onError }) {
   function exactCard() {
     if (!last.src.python) return null;
     const out = el('p', { class: 'hint' }, last.mpy
-      ? `Built ${new Date(last.mpy.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}: .mpy file ${fmtBytes(last.mpy.total)} (code ${fmtBytes(last.mpy.code)}, names ${fmtBytes(last.mpy.namesBytes)}). The sizes above now use the compiled code.`
+      ? `Built ${new Date(last.mpy.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}: .mpy file ${fmtBytes(last.mpy.total)} (code ${fmtBytes(last.mpy.code)}, names ${fmtBytes(last.mpy.namesBytes)}${last.mpy.objects ? `, ${last.mpy.objects} constants ${fmtBytes(last.mpy.consts.bytes)}` : ''}). The sizes above now use the compiled code.`
       : 'Compiles this canvas with 75F\'s py-to-mpy service, the compiler the Sequencer itself uses, with your current sign-in. Nothing is saved there, and the result replaces the estimates above with real code sizes.');
     const btn = el('button', { type: 'button' }, last.mpy ? 'Build again' : 'Get exact sizes from the 75F compiler');
     btn.addEventListener('click', async () => {
@@ -139,7 +139,7 @@ export function createHeapView(root, { loadSource, build, onError }) {
         const res = await build(last.src.python);
         const bytes = Uint8Array.from(atob(res.mpyBase64), (c) => c.charCodeAt(0));
         const mpy = parseMpy(bytes, last.result.analysis?.defOrder || []);
-        if (mpy.code == null) throw new Error(`Compiled (.mpy ${fmtBytes(mpy.total)}), but it holds constant objects this version can't split by function yet.`);
+        if (mpy.code == null) throw new Error(`Compiled (.mpy ${fmtBytes(mpy.total)}), but the file couldn't be split by function (${mpy.problem || 'unknown layout'}).`);
         last.mpy = { ...mpy, at: new Date().toISOString() };
         last.result = estimate(last.src, last.readings, mpy);
         render();
@@ -152,15 +152,16 @@ export function createHeapView(root, { loadSource, build, onError }) {
   }
 
   function calibrateCard(readings) {
-    const ta = el('textarea', { id: 'gcLine', rows: '3', 'aria-describedby': 'gcHelp',
-      placeholder: 'GC: total: 11968, used: …, free: …\nNo. of 1-blocks: …, max blk sz: …, max free sz: …' });
+    const ta = el('textarea', { id: 'gcLine', rows: '6', 'aria-describedby': 'gcHelp',
+      placeholder: 'GC: total: 11968, used: …, free: …\nNo. of 1-blocks: …, max blk sz: …, max free sz: …\n(paste several readings)' });
     const ran = el('input', { type: 'radio', name: 'gcOutcome', value: 'ran', checked: true });
     const failed = el('input', { type: 'radio', name: 'gcOutcome', value: 'failed' });
     const msg = el('p', { class: 'hint', role: 'status' });
     const save = el('button', { type: 'button', class: 'primary' }, 'Save reading');
     save.addEventListener('click', async () => {
-      const gc = parseGcLine(ta.value);
-      if (!gc) { msg.textContent = 'Paste the line that starts with "GC: total:".'; return; }
+      const all = parseGcLines(ta.value);
+      if (!all) { msg.textContent = 'Paste the lines that start with "GC: total:".'; return; }
+      const gc = all.low;
       const a = last.result.analysis;
       const reading = {
         at: new Date().toISOString(),
@@ -170,6 +171,9 @@ export function createHeapView(root, { loadSource, build, onError }) {
         total: a ? a.modelPoints * HEAP.modelPerPoint + a.program : null,
         largestEst: a?.largest?.bytes ?? null,
         largestName: a?.largest?.name ?? null,
+        gcHigh: all.readings.length > 1 ? all.high : null,
+        gcCount: all.readings.length,
+        gcSteady: all.steady,
         mpy: last.mpy ? { total: last.mpy.total, code: last.mpy.code, largest: last.result.est.largest?.bytes ?? null } : null,
         gc,
       };
@@ -180,7 +184,7 @@ export function createHeapView(root, { loadSource, build, onError }) {
     const list = readings.length
       ? el('ul', { class: 'heap-readings' }, readings.map((r, i) => el('li', {},
         el('span', { class: r.outcome === 'ran' ? 'outcome-ok' : 'outcome-bad' }, r.outcome === 'ran' ? 'Ran' : 'Failed'),
-        el('span', {}, ` · ${new Date(r.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} · ${r.blocks} blocks · used ${r.gc.used}, free ${r.gc.free}${r.gc.maxBlk != null ? `, max blk ${r.gc.maxBlk}` : ''}`),
+        el('span', {}, ` · ${new Date(r.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} · ${r.blocks} blocks · used ${r.gc.used}${r.gcHigh ? `–${r.gcHigh.used}` : ''}${r.gcCount > 1 ? ` (${r.gcCount} readings${r.gcSteady ? ', steady' : ''})` : ' (1 reading)'}${r.gc.maxBlk != null ? ` · max blk ${r.gc.maxBlk}` : ''}`),
         el('button', { type: 'button', class: 'link', 'aria-label': 'Delete this reading', onclick: async () => {
           const next = (await loadReadings()).filter((_, j) => j !== i);
           await saveReadings(next);
@@ -189,7 +193,7 @@ export function createHeapView(root, { loadSource, build, onError }) {
       : null;
     return el('section', { class: 'card heap-card' },
       el('h2', {}, 'Add a reading from the controller'),
-      el('p', { class: 'hint', id: 'gcHelp' }, 'Load this canvas on the controller, paste the GC lines it prints, and say whether the sequence ran. Readings are kept in this browser and sharpen the estimate.'),
+      el('p', { class: 'hint', id: 'gcHelp' }, 'Push this canvas, then paste the GC lines from right after the push and from a minute or two later, all together, and say whether it ran. Garbage builds up between clean-ups, so one reading is only a snapshot: the lowest "used" is kept as the sequence\'s real size. Readings stay in this browser.'),
       ta,
       el('div', { class: 'heap-outcome', role: 'radiogroup', 'aria-label': 'Did it run?' },
         el('label', { class: 'radio' }, ran, el('span', {}, 'It ran')),

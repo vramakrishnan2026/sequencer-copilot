@@ -36,3 +36,28 @@ test('reads a real .mpy from the 75F compiler (641 bytes, two functions)', async
   assert.equal(m.module, 103);
   assert.deepEqual(m.functions, [{ name: 'runStartup', bytes: 77 }, { name: 'runContinuous', bytes: 119 }]);
 });
+
+test('reads a .mpy with constants (decimals, strings, big int, tuple) to the last byte', async () => {
+  const { parseMpy } = await import('../extension/src/heap/estimate.js');
+  const fs = await import('node:fs');
+  const m = parseMpy(new Uint8Array(fs.readFileSync(new URL('./fixtures/consts.mpy', import.meta.url))), ['runStartup', 'runContinuous', 'helper']);
+  assert.equal(m.problem, undefined);
+  assert.equal(m.objects, 8);
+  assert.equal(m.consts.floats, 6);
+  assert.equal(m.consts.strings, 2);
+  assert.deepEqual(m.functions.map((f) => f.name), ['runStartup', 'runContinuous', 'helper']);
+});
+
+test('keeps the lowest and highest of several GC readings', async () => {
+  const { parseGcLines } = await import('../extension/src/heap/estimate.js');
+  const r = parseGcLines(`GC: total: 11968, used: 6592, free: 5376
+ No. of 1-blocks: 230, 2-blocks: 1, max blk sz: 50, max free sz: 334
+GC: total: 11968, used: 11488, free: 480
+ No. of 1-blocks: 536, 2-blocks: 1, max blk sz: 50, max free sz: 28
+GC: total: 11968, used: 4672, free: 7296
+ No. of 1-blocks: 110, 2-blocks: 1, max blk sz: 50, max free sz: 456`);
+  assert.equal(r.readings.length, 3);
+  assert.equal(r.low.used, 4672);
+  assert.equal(r.high.used, 11488);
+  assert.equal(r.steady, false);
+});

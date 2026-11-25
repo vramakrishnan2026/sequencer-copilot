@@ -199,7 +199,20 @@ export function analyzePython(code) {
 
 // ------------------------------------------------------------------------------ calibration
 
-/** Parses the controller's GC line(s). Returns null if no "GC: total" line is found. */
+/**
+ * Parses every GC reading in the pasted text (each starts with "GC: total:"). Garbage builds up
+ * between collections, so one reading is only a snapshot: the lowest "used" is the closest to what
+ * the sequence really keeps, the highest shows how full the heap gets.
+ */
+export function parseGcLines(text) {
+  const parts = String(text).split(/(?=GC:\s*total:)/i).map(parseGcLine).filter(Boolean);
+  if (!parts.length) return null;
+  const low = parts.reduce((a, b) => (b.used < a.used ? b : a));
+  const high = parts.reduce((a, b) => (b.used > a.used ? b : a));
+  return { readings: parts, low, high, steady: parts.length > 1 && low.used === high.used };
+}
+
+/** Parses one GC reading. Returns null if no "GC: total" line is found. */
 export function parseGcLine(text) {
   const m = String(text).match(/GC:\s*total:\s*(\d+),\s*used:\s*(\d+),\s*free:\s*(\d+)/i);
   if (!m) return null;
@@ -428,10 +441,24 @@ export function parseMpy(bytes, defOrder = []) {
     p += n + 1;
   }
   const namesEnd = p;
-  // Constant objects (floats, long strings) come next; their sizes vary, so stop if present.
-  if (nObj) {
-    return { total: u.length, version: u[1], names, namesBytes: namesEnd, objects: nObj, module: null, functions: [], code: null };
-  }
+  // Constant objects (decimal numbers, long strings, big ints, tuples). MicroPython 1.20+ tags
+  // them with numbers 0-10; 1.19 used letters. Read past them to reach the code.
+  const consts = { count: 0, floats: 0, strings: 0, bytes: 0 };
+  const readObj = () => {
+    const t = u[p++];
+    consts.count += 1;
+    const letter = String.fromCharCode(t);
+    if (t <= 4 || 'te'.includes(letter)) return; // function table, None, False, True, Ellipsis
+    if (t === 10) { const n = uint(); for (let i = 0; i < n; i++) readObj(); return; } // tuple
+    const len = uint();
+    p += len;
+    if (t === 5 || t === 6 || letter === 's' || letter === 'b') p += 1; // trailing NUL
+    if (t === 8 || letter === 'f') consts.floats += 1;
+    if (t === 5 || letter === 's') consts.strings += 1;
+  };
+  for (let i = 0; i < nObj; i++) readObj();
+  const objectsEnd = p;
+  consts.bytes = objectsEnd - namesEnd;
   const rawCode = () => {
     const kl = uint();
     const len = Math.floor(kl / 8);
@@ -445,9 +472,14 @@ export function parseMpy(bytes, defOrder = []) {
     return { len, children };
   };
   const root = rawCode();
+  // A clean read ends exactly at the end of the file; anything else means the format differs.
+  if (p !== u.length) {
+    return { total: u.length, version: u[1], names, namesBytes: namesEnd, objects: nObj, consts, module: null, functions: [], code: null,
+      problem: `read ${p} of ${u.length} bytes` };
+  }
   const functions = root.children.map((c, i) => ({ name: defOrder[i] || `function ${i + 1}`, bytes: c.len }));
   const code = root.len + functions.reduce((n, f) => n + f.bytes, 0);
-  return { total: u.length, version: u[1], names, namesBytes: namesEnd, objects: 0, module: root.len, functions, code };
+  return { total: u.length, version: u[1], names, namesBytes: namesEnd, objects: nObj, consts, module: root.len, functions, code };
 }
 
 /** The superloop the Sequencer appends when it builds, if the generated code doesn't have it. */
@@ -482,7 +514,7 @@ export function estimate(src, readings = [], mpy = null) {
       // take them out there and count the model at its measured cost.
       const modelCode = a.modelPoints * 2 * 15;
       const fnObjects = mpy.functions.length * 16;
-      program = Math.max(0, mpy.code - modelCode) + fnObjects + a.names;
+      program = Math.max(0, mpy.code - modelCode) + fnObjects + a.names + (mpy.consts?.bytes || 0) + (mpy.consts?.floats || 0) * 16;
       const big = mpy.functions.reduce((x, f) => (!x || f.bytes > x.bytes ? f : x), null);
       largest = big ? { name: big.name, bytes: big.bytes, exact: true } : largest;
       exact = mpy;

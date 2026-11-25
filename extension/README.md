@@ -1,4 +1,4 @@
-# 75F Sequencer Copilot (Chrome MV3), v0.9.3
+# 75F Sequencer Copilot (Chrome MV3), v0.9.4
 
 Made by Vinay.
 
