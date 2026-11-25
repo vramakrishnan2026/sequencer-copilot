@@ -219,9 +219,10 @@ export function analyzePython(code) {
 
   // Temporary data per run (rough): decimal results of arithmetic and of library calls in the
   // code that runs every cycle are 16-byte objects, about two per operation including the
-  // libraries' own; input conversions add an 800-byte table (measured on both boilers).
+  // libraries' own; input conversions add an 800-byte table plus about 160 bytes a call
+  // (fitted to the boiler rebuild, measured 4,016+ a run with six conversions; h2 measured 96).
   let runOps = 0;
-  let conversion = false;
+  let conversions = 0;
   const grows = new Set();
   for (const s of out) {
     if (s.name === 'runStartup') continue;
@@ -233,7 +234,7 @@ export function analyzePython(code) {
       const calls = (t.match(/[A-Za-z_]\w*\s*\(/g) || []).length;
       const statementCall = /^[A-Za-z_][\w.]*\(/.test(t) ? 1 : 0;
       runOps += arith + Math.max(0, calls - statementCall);
-      if (/ConvertValueFromIndex|ConvertResistance/.test(t)) conversion = true;
+      conversions += (t.match(/ConvertValueFromIndex|ConvertResistance/g) || []).length;
       // Data that grows every run: list appends, or text joined onto itself.
       const app = t.match(/^([A-Za-z_]\w*)\.(append|extend|insert)\(/);
       if (app && declared.has(app[1])) grows.add(app[1]);
@@ -241,7 +242,7 @@ export function analyzePython(code) {
       if (join && declared.has(join[1]) && /str\(|'|"/.test(t)) grows.add(join[1]);
     }
   }
-  const garbagePerRun = Math.round(32 * runOps + (conversion ? 800 : 0));
+  const garbagePerRun = Math.round(32 * runOps + (conversions ? 800 + 160 * conversions : 0));
   const largest = functions.reduce((a, s) => (!a || s.bytes > a.bytes ? s : a), null);
   return {
     sections: out,

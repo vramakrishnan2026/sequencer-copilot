@@ -130,3 +130,18 @@ test('flags code that makes memory build up every run, and nothing else', async 
   assert.deepEqual(analyzePython(base + '  Log.append(T)\n').grows, ['Log']);
   assert.deepEqual(analyzePython(base.replace('Log = []', "Log = ''") + "  Log = str(Log) + str(T)\n").grows, ['Log']);
 });
+
+test('run peak: boiler rebuild reaches the measured 11,456 cap, h2 stays small', async () => {
+  const fs = await import('node:fs');
+  const m = await import('../extension/src/heap/estimate.js');
+  const boiler = m.analyzePython(fs.readFileSync(new URL('./fixtures/boiler-rebuild.py', import.meta.url), 'utf8'));
+  assert.ok(boiler.garbagePerRun >= 4016, `boiler garbage ${boiler.garbagePerRun}`);
+  assert.ok(Math.abs(boiler.mpyEst - 4338) <= 90, `boiler mpy ${boiler.mpyEst}`);
+  const py = fs.readFileSync(new URL('./fixtures/boiler-rebuild.py', import.meta.url), 'utf8');
+  const r = m.estimate({ python: py, blocks: 787, mpySize: 4338, sequence: { key: 'boiler' } });
+  const run = (r.verdict || r).run;
+  assert.equal(run.peakUsed, 11456);
+  assert.ok(Math.round(run.peakShare * 100) >= 94);
+  const h2 = m.analyzePython(fs.readFileSync(new URL('./fixtures/small.py', import.meta.url), 'utf8'));
+  assert.equal(h2.garbagePerRun, 96);
+});
