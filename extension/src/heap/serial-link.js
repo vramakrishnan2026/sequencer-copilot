@@ -47,7 +47,7 @@ export function createSerialLink({ onText, onStatus }) {
     if (!wanted) return;
     onStatus({ state: 'waiting', baud });
     clearTimeout(retry);
-    retry = setTimeout(reopen, 2000);
+    retry = setTimeout(reopen, 300); // a controller on native USB comes back within a second or two of a restart
   }
 
   async function reopen() {
@@ -57,8 +57,8 @@ export function createSerialLink({ onText, onStatus }) {
       const i = p.getInfo();
       return info && i.usbVendorId === info.usbVendorId && i.usbProductId === info.usbProductId;
     });
-    if (!same) { retry = setTimeout(reopen, 3000); return; }
-    try { await open(same); } catch { retry = setTimeout(reopen, 3000); }
+    if (!same) { retry = setTimeout(reopen, 500); return; }
+    try { await open(same); } catch { retry = setTimeout(reopen, 500); }
   }
 
   if (supported()) {
@@ -82,7 +82,7 @@ export function createSerialLink({ onText, onStatus }) {
       } catch (err) {
         wanted = false;
         throw new Error(/already open|Failed to open/i.test(err.message)
-          ? 'That port is in use. Close PuTTY, Tera Term or any other program reading the controller, then try again.'
+          ? 'That port is in use. Close Tera Term (or any other program reading the controller), then try again.'
           : err.message);
       }
     },

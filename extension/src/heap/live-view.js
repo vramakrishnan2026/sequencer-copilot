@@ -165,7 +165,9 @@ export function createLiveView(root, { canvas = () => null } = {}) {
     const live = reader.session;
     const connected = status.state === 'connected' || status.state === 'waiting';
 
-    const baud = el('select', { 'aria-label': 'Speed (baud rate)', disabled: connected || null },
+    // A controller on native USB ("USB Serial Device") ignores the speed; only a USB-to-serial
+    // adapter needs it, so it's tucked away.
+    const baud = el('select', { 'aria-label': 'Port speed (baud rate)' },
       BAUDS.map((b) => el('option', { value: String(b), selected: b === status.baud || null }, `${b.toLocaleString()} baud`)));
     const connectBtn = el('button', { type: 'button', class: 'primary', disabled: !supported || null, onclick: async () => {
       error = '';
@@ -179,20 +181,24 @@ export function createLiveView(root, { canvas = () => null } = {}) {
     const head = el('div', { class: 'live-head' },
       el('h2', {}, 'Controller on USB'),
       connected ? el('span', { class: `chip ${status.state === 'connected' ? 'ok' : 'warn'}` },
-        status.state === 'connected' ? `Connected · ${status.baud.toLocaleString()} baud` : 'Reconnecting…') : null);
+        status.state === 'connected' ? 'Connected' : 'Reconnecting…') : null);
 
     const parts = [head];
     if (!connected) {
       parts.push(el('p', { class: 'hint' }, supported
-        ? 'Plug the controller into this computer by USB to watch its memory live: the reading after start-up and every run after it. Keep this panel open while it records. Close PuTTY or any other program using the port first.'
+        ? 'Plug the controller into this computer by USB to watch its memory live: the reading after start-up and every run after it. Keep this panel open while it records. Close Tera Term or any other program using the port first, then pick the controller (for example "USB Serial Device (COM26)").'
         : 'This browser can\'t open USB serial ports. Use Chrome or Edge on a desktop computer.'));
-      parts.push(el('div', { class: 'live-row' }, baud, connectBtn));
+      parts.push(el('div', { class: 'live-row' }, connectBtn));
+      parts.push(el('details', { class: 'live-earlier' },
+        el('summary', {}, 'Using a USB-to-serial adapter instead?'),
+        el('p', { class: 'hint' }, 'Pick the speed the adapter uses. A controller plugged in directly ignores this.'),
+        el('div', { class: 'live-row' }, baud)));
     } else {
       const quiet = lastText && Date.now() - lastText > 30000;
       parts.push(live
         ? sessionBlock(live, { live: true })
-        : el('p', { class: 'hint' }, 'Connected. Waiting for the controller\'s log… If nothing appears, check the speed (baud rate). Restart the controller to capture the start-up reading.'));
-      if (quiet) parts.push(el('p', { class: 'hint' }, `Nothing received for ${span(Date.now() - lastText)}. Is the controller on and the speed right?`));
+        : el('p', { class: 'hint' }, 'Connected. Waiting for the controller\'s log… Restart the controller or push the sequence to capture the start-up reading.'));
+      if (quiet) parts.push(el('p', { class: 'hint' }, `Nothing received for ${span(Date.now() - lastText)}. Is the controller on and running a sequence?`));
       const logToggle = el('button', { type: 'button', class: 'link', onclick: () => { showLog = !showLog; render(); } }, showLog ? 'Hide log' : 'Show log');
       parts.push(el('div', { class: 'live-row' }, disconnectBtn, logToggle));
       if (showLog) parts.push(el('pre', { class: 'live-log', 'aria-label': 'Latest lines from the controller' }, tail.slice(-80).join('\n')));
