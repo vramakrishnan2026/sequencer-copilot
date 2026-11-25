@@ -1,4 +1,4 @@
-# 75F Sequencer Copilot (Chrome MV3), v0.9.2
+# 75F Sequencer Copilot (Chrome MV3), v0.9.3
 
 Made by Vinay.
 
@@ -29,8 +29,10 @@ the panel explains why and **Copy message for your assistant** gives you the exa
 ## Memory check
 
 **Memory** (main screen) estimates whether the sequence fits the Connect Module's MicroPython heap
-(11,968 bytes; the firmware takes 2,640, leaving about 9,330). It reads the Python the Sequencer generates
-from the canvas (read-only, the same generator the editor uses) and shows:
+(11,968 bytes; the firmware takes 2,640, leaving about 9,330). It works from the Python the Sequencer generates. The Sequencer keeps its generator private, so the extension
+notes it the first time the Sequencer uses it, and keeps a copy of the code the Sequencer sends to its compiler when
+it builds (read-only; nothing is changed or blocked). After a page load, build once in the Sequencer (or anything
+that makes it generate code); from then on the memory check generates code for the live canvas itself. It shows:
 
 - a verdict, **Fits**, **Tight** or **Likely too large**, with its confidence and the reasons. Two checks, and the
   worse one wins: total size against loads that ran and failed, and the largest function against the largest

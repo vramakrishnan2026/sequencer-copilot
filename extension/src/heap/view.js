@@ -6,6 +6,7 @@ import { HEAP, estimate, fmtBytes, parseGcLine, parseMpy, withSuperloop } from '
  */
 
 const READINGS_KEY = 'heapReadings';
+const clockOf = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '?');
 
 function el(tag, attrs = {}, ...kids) {
   const n = document.createElement(tag);
@@ -91,7 +92,12 @@ export function createHeapView(root, { loadSource, build, onError }) {
       est.largest ? row('Largest function', `${est.largest.exact ? '' : '≈ '}${fmtBytes(est.largest.bytes)}`, `${est.largest.name}${est.largest.exact ? ', compiled' : ''}`) : null,
       analysis ? row('Variables · functions', `${analysis.variables} · ${analysis.functions}`) : null,
       row('Blocks on canvas', String(est.blocks)),
-      !est.fromPython ? el('p', { class: 'note' }, src.reason || 'Generated Python not available.') : null);
+      !est.fromPython ? el('p', { class: 'note' }, src.reason || 'Generated Python not available.') : null,
+      est.fromPython ? el('p', { class: 'hint' }, {
+        build: `Code: the Sequencer's own build at ${clockOf(src.builtAt)}, and the canvas hasn't changed since.`,
+        'old-build': `Code: the Sequencer's build at ${clockOf(src.builtAt)}. The canvas has changed since, so build again in the Sequencer for current figures.`,
+        generator: 'Code: generated from the live canvas with the Sequencer\'s own generator.',
+      }[src.source] || '') : null);
 
     let where = null;
     if (analysis) {
@@ -115,7 +121,7 @@ export function createHeapView(root, { loadSource, build, onError }) {
       el('h2', {}, 'Ways to cut'),
       suggestions.length
         ? el('ol', { class: 'heap-cuts' }, suggestions.map((s) => el('li', {}, s.text)))
-        : el('p', { class: 'hint' }, analysis ? 'Nothing obvious found: no repeated runs, single-use model reads or repeated defaults.' : 'Needs the generated Python.'));
+        : el('p', { class: 'hint' }, analysis ? 'Nothing obvious found: no repeated runs, single-use model reads, repeated defaults or loose blocks.' : 'Needs the generated code: build the sequence once in the Sequencer, then read the canvas again (↻).'));
 
     root.replaceChildren(...[verdictCard, numbers, where, cuts, exactCard(), calibrateCard(readings)].filter(Boolean));
   }

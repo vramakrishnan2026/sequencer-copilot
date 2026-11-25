@@ -12,6 +12,60 @@
   window.__seqCopilotBridge = true;
 
   const CHANNEL = '75f-seq-copilot';
+
+  // ----------------------------------------------------------- code capture
+  // The Sequencer keeps its Python generator private, so it can't be looked up. Instead note
+  // (1) the generator object whenever the Sequencer runs it, and (2) the Python it sends to
+  // py-to-mpy when it builds. Both are read-only observations; nothing is changed or blocked.
+  const captured = { generator: null, build: null };
+  const knows75f = (g) => {
+    try {
+      return ['model_block', 'conn_mod_get_universal_input_value']
+        .some((t) => typeof g?.forBlock?.[t] === 'function' || typeof g?.[t] === 'function');
+    } catch { return false; }
+  };
+  function noteBuild(url, body) {
+    try {
+      if (!/py-to-mpy/.test(String(url)) || typeof body !== 'string') return;
+      const j = JSON.parse(body);
+      // The Sequencer first compiles a trial copy (with a shim and a 10-run loop); keep the real one.
+      if (typeof j.snippet !== 'string' || /__loop_guard/.test(j.snippet)) return;
+      captured.build = { python: j.snippet, at: new Date().toISOString(), seq: watch.seq, canvasId: watch.canvasId };
+    } catch { /* not JSON */ }
+  }
+  try {
+    const open = XMLHttpRequest.prototype.open;
+    const send = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+      this.__seqCopilotUrl = url;
+      return open.call(this, method, url, ...rest);
+    };
+    XMLHttpRequest.prototype.send = function (body) {
+      noteBuild(this.__seqCopilotUrl, body);
+      return send.call(this, body);
+    };
+    const fetchOrig = window.fetch;
+    window.fetch = function (input, init) {
+      try { noteBuild(typeof input === 'string' ? input : input?.url, init?.body); } catch { /* ignore */ }
+      return fetchOrig.apply(this, arguments);
+    };
+  } catch { /* leave the page's networking alone if it can't be wrapped */ }
+
+  function hookGenerators(B) {
+    for (const C of [B.CodeGenerator, B.Generator]) {
+      const proto = C?.prototype;
+      if (!proto || proto.__seqCopilotHook) continue;
+      for (const method of ['workspaceToCode', 'blockToCode']) {
+        const orig = proto[method];
+        if (typeof orig !== 'function') continue;
+        proto[method] = function (...args) {
+          if (!captured.generator && knows75f(this)) captured.generator = this;
+          return orig.apply(this, args);
+        };
+      }
+      proto.__seqCopilotHook = true;
+    }
+  }
   // Exports go to AI assistants as files, so keep the whole sequence unless it is enormous.
   const MAX_CONTEXT_CHARS = 1_500_000;
   const MAX_CATALOG_TYPES = 250;
@@ -146,6 +200,7 @@
     if (options.length) {
       cached = options[0];
       watchCanvas(cached.ws);
+      for (const o of options) { try { hookGenerators(o.B); } catch { /* older Blockly */ } }
       return cached;
     }
 
@@ -1650,11 +1705,8 @@
       try { return !!g && typeof g === 'object' && !isWindowLike(g) && typeof g.workspaceToCode === 'function'; } catch { return false; }
     };
     // Blockly 10 keeps block generators in forBlock; older code assigns them on the generator.
-    const knows75f = (g) => { try {
-      return ['model_block', 'conn_mod_get_universal_input_value']
-        .some((t) => typeof g.forBlock?.[t] === 'function' || typeof g[t] === 'function');
-    } catch { return false; } };
     const isPython = (g) => { try { return /python/i.test(g.name_ || g.name || '') || typeof g.forBlock?.controls_if === 'function'; } catch { return false; } };
+    if (captured.generator) return captured.generator;
     const candidates = [];
     const add = (v) => {
       if (!v || isWindowLike(v)) return;
@@ -1704,17 +1756,30 @@
     }));
     let python = null;
     let reason = '';
+    let source = '';
+    const build = captured.build && captured.build.canvasId === watch.canvasId ? captured.build : null;
+    const buildCurrent = build && build.seq === watch.seq;
     const gen = findPythonGenerator(B);
-    if (!gen) reason = 'The page\'s Python generator could not be found, so the estimate uses block counts.';
-    else {
+    if (buildCurrent) {
+      python = build.python;
+      source = 'build';
+    } else if (gen) {
       try {
         python = gen.workspaceToCode(ws);
         if (typeof python !== 'string' || !python.trim()) { python = null; reason = 'The Python generator returned nothing for this canvas.'; }
+        else source = 'generator';
       } catch (err) {
         reason = `The Python generator failed on this canvas: ${err.message}`;
       }
     }
-    return { python, reason, blocks: all.length, stacks, change: changeInfo() };
+    if (!python && build) {
+      python = build.python;
+      source = 'old-build';
+    }
+    if (!python && !reason) {
+      reason = 'The Sequencer hasn\'t generated code since this page loaded, so the estimate uses block counts. Build the sequence once in the Sequencer (the step that compiles it for the controller), then read the canvas again here.';
+    }
+    return { python, reason, source, builtAt: build?.at || null, blocks: all.length, stacks, change: changeInfo() };
   }
 
   // ----------------------------------------------------- real build (py-to-mpy)
