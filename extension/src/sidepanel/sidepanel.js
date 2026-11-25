@@ -1,5 +1,6 @@
 import { SKILL_NAME, SKILL_REFERENCE, buildAssistantInstructions, buildExport, buildSkillMd, friendlyError, loadGuide, parsePastedPlan, repairMessage } from './export.js';
 import { makeZip } from './zip.js';
+import { createHeapView } from '../heap/view.js';
 import { createSimulatorView } from '../simulator/view.js';
 import { addFindings, clearFindings, findingsMarkdown, loadFindings, parseFindings, removeFinding, stripFindings } from './findings.js';
 
@@ -8,7 +9,7 @@ const { id: windowId } = await chrome.windows.getCurrent();
 const VERSION = chrome.runtime.getManifest().version;
 
 // Kept between sessions. mode: 'new' | 'edit'; assistant: 'chatgpt' | 'antigravity' | 'claude' | 'copilot' | 'other'.
-const DEFAULTS = { mode: 'new', assistant: 'chatgpt', showTypes: true, setupDone: false, lastDownload: null };
+const DEFAULTS = { mode: 'new', assistant: 'chatgpt', showTypes: true, setupDone: false, lastDownload: null, mpyService: '' };
 const settings = { ...DEFAULTS, ...((await chrome.storage.local.get('settings')).settings || {}) };
 const saveSettings = (patch) => { Object.assign(settings, patch); return chrome.storage.local.set({ settings }); };
 
@@ -107,6 +108,7 @@ function renderMain() {
   const hasBlocks = state.ready && !!count;
   $('openMap').disabled = !hasBlocks;
   $('openSimulator').disabled = !hasBlocks;
+  $('openHeap').disabled = !hasBlocks;
   $('toolsHint').hidden = hasBlocks || !state.ready;
   $('openMap').title = hasBlocks ? 'What each output and register is worked out from, as a diagram' : '';
   const note = $('notEmptyNote');
@@ -256,6 +258,40 @@ $('closeSim').addEventListener('click', () => {
   $('mainView').hidden = false;
   renderMain();
   $('openSimulator').focus();
+});
+
+// ---- memory check
+let heap = null;
+async function loadHeap() {
+  $('heapReload').disabled = true;
+  $('heapSub').textContent = 'Reading the canvas…';
+  const ok = await heap.load();
+  if (ok) $('heapSub').textContent = 'Will this sequence fit the controller\'s heap?';
+  $('heapReload').disabled = false;
+}
+$('openHeap').addEventListener('click', async () => {
+  $('mainView').hidden = true;
+  $('heapView').hidden = false;
+  $('closeHeap').focus();
+  if (!heap) {
+    heap = createHeapView($('heapRoot'), {
+      loadSource: () => bg('heapSource'),
+      getService: () => settings.mpyService,
+      onError: (err) => {
+        $('heapSub').textContent = /Unknown method/.test(err.message)
+          ? 'Reload the Sequencer tab once so the update reaches it, then try again.'
+          : err.message;
+      },
+    });
+  }
+  await loadHeap();
+});
+$('heapReload').addEventListener('click', loadHeap);
+$('closeHeap').addEventListener('click', () => {
+  $('heapView').hidden = true;
+  $('mainView').hidden = false;
+  renderMain();
+  $('openHeap').focus();
 });
 
 $('openMap').addEventListener('click', async () => {
@@ -609,6 +645,7 @@ async function renderSettings() {
   document.querySelectorAll('input[name=assistant]').forEach((r) => { r.checked = r.value === settings.assistant; });
   renderSetupSteps();
   $('showTypes').checked = settings.showTypes;
+  $('mpyService').value = settings.mpyService || '';
   $('setupSub').textContent = state.guideVersion
     ? `Guide version ${state.guideVersion}. Do this once, and again when the guide changes.`
     : 'Do this once, and again when the guide changes.';
@@ -628,6 +665,24 @@ document.querySelectorAll('input[name=assistant]').forEach((r) => r.addEventList
 }));
 
 $('showTypes').addEventListener('change', (e) => saveSettings({ showTypes: e.target.checked }));
+// The size service is optional: Chrome asks the person to allow that one address when they save it.
+$('saveService').addEventListener('click', async () => {
+  const msg = $('serviceMsg');
+  const raw = $('mpyService').value.trim();
+  if (!raw) {
+    await saveSettings({ mpyService: '' });
+    msg.textContent = 'Cleared. Nothing leaves this browser.';
+    return;
+  }
+  let url;
+  try { url = new URL(raw); } catch { msg.textContent = 'That isn\'t a web address.'; return; }
+  if (url.protocol !== 'https:') { msg.textContent = 'Use an https:// address.'; return; }
+  if (!url.hostname.endsWith('.workers.dev')) { msg.textContent = 'Use the Worker\'s workers.dev address (the extension only asks for permission to reach *.workers.dev).'; return; }
+  const granted = await chrome.permissions.request({ origins: [`${url.origin}/*`] }).catch(() => false);
+  if (!granted) { msg.textContent = 'Chrome didn\'t allow that address, so it wasn\'t saved.'; return; }
+  await saveSettings({ mpyService: url.href });
+  msg.textContent = `Saved. The memory check can now ask ${url.host} for the exact size.`;
+});
 
 $('copyDiagnostics').addEventListener('click', async () => {
   try {

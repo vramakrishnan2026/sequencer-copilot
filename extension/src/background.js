@@ -57,6 +57,7 @@ const HANDLERS = {
   exportData: onCanvas('getContext', () => ({ refreshCatalog: true })),
   logicMap: onCanvas('logicMap'),
   simulatorModel: onCanvas('simulatorModel'),
+  heapSource: onCanvas('heapSource'),
   diagnoseModelPoints: onCanvas('diagnoseModelPoints'),
   validate: onCanvas('validate', (m) => ({ actions: m.actions })),
   preview: onCanvas('preview', (m) => ({ actions: m.actions })),

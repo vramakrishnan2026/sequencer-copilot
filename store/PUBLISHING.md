@@ -69,10 +69,16 @@ updates automatically.
     > altius.75f.io). It reads the open sequence from the Sequencer's Blockly editor to export it, preview changes,
     > draw logic maps and run the simulator, and applies plans the user has reviewed and approved. It does not run
     > on any other site.
+  - Optional host permission (`https://*.workers.dev/*`):
+    > Optional and off by default. If the user enters the address of their own Cloudflare Worker in Settings, Chrome
+    > asks them to allow that one address. The memory check then sends the Python generated from the open sequence
+    > to it, only when the user clicks "Get exact .mpy size", and shows the size of the compiled MicroPython file.
+    > No other data is sent, and nothing is sent to any address the user didn't enter.
 - **Remote code**: choose "No, I am not using remote code". Everything, including the Mermaid diagram library, is inside the package.
 - **Data usage**: tick **Website content** only. The extension reads the Site Sequencer page's content (the open
-  sequence) on this computer, at the person's request. It sends nothing to any server, including its author; ticking
-  this is the safer reading of "collect", and it matches the privacy statement.
+  sequence) on this computer, at the person's request. By default it sends nothing to any server; the optional
+  exact size check sends the generated Python only to the user's own Worker address, at their click. Ticking
+  Website content is the safer reading of "collect", and it matches the privacy statement.
 - Tick the three certifications (no selling, no unrelated use, no creditworthiness use).
 - **Privacy policy**: the public link to `PRIVACY.md` from setup step 3.
 

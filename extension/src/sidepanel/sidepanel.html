@@ -101,8 +101,12 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 3v18M12 3v18M18 3v18"/><rect x="3.5" y="13" width="5" height="3" rx="1" fill="currentColor"/><rect x="9.5" y="6" width="5" height="3" rx="1" fill="currentColor"/><rect x="15.5" y="10" width="5" height="3" rx="1" fill="currentColor"/></svg>
             Simulate
           </button>
+          <button id="openHeap" type="button" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>
+            Memory
+          </button>
         </div>
-        <p id="toolsHint" class="hint" hidden>The map and simulator open once the canvas has blocks.</p>
+        <p id="toolsHint" class="hint" hidden>The map, simulator and memory check open once the canvas has blocks.</p>
       </section>
 
       <section id="earlier" class="earlier" aria-label="Earlier answers" hidden>
@@ -133,6 +137,19 @@
       </button>
       <span>Made by Vinay</span>
     </footer>
+  </div>
+
+  <!-- ========================================================== memory view -->
+  <div id="heapView" class="view" hidden>
+    <header class="bar">
+      <button id="closeHeap" class="icon" type="button" aria-label="Back"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+      <div class="bar-text">
+        <h1>Memory check</h1>
+        <p id="heapSub">Will this sequence fit the controller's heap?</p>
+      </div>
+      <button id="heapReload" class="icon" type="button" aria-label="Read the canvas again" title="Read the canvas again"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>
+    </header>
+    <main id="heapRoot" class="heap-root"></main>
   </div>
 
   <!-- ======================================================== settings view -->
@@ -182,6 +199,18 @@
           <span><span>Show block types under each change</span><span class="hint">For example conn_mod_set_relay_output</span></span>
           <input id="showTypes" type="checkbox">
         </label>
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <h2>Exact .mpy size (optional)</h2>
+          <p class="hint">Address of your Cloudflare Worker (<code>https://….workers.dev</code>, see <code>worker/README.md</code> in the repo) that turns the generated Python into .mpy and returns its size. When set, the memory check offers <b>Get exact .mpy size</b>, which sends this canvas's Python there. Leave empty to keep everything in this browser.</p>
+        </div>
+        <label class="field"><span class="sr-only">Size service address</span>
+          <input id="mpyService" type="url" placeholder="https://mpy-size.example.workers.dev" autocomplete="off" spellcheck="false">
+        </label>
+        <div class="row"><button id="saveService" type="button" class="small">Save</button></div>
+        <p id="serviceMsg" class="hint" role="status"></p>
       </section>
 
       <section class="card">

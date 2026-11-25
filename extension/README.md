@@ -1,4 +1,4 @@
-# 75F Sequencer Copilot (Chrome MV3), v0.8.0
+# 75F Sequencer Copilot (Chrome MV3), v0.9.0
 
 Made by Vinay.
 
@@ -25,6 +25,30 @@ Assistant setup sits at the bottom of the panel, since it is done once.
 labels the editor shows ("set relay Relay 1 to On"), grouped by stack. **Apply to canvas** runs it as one
 Blockly event group, so **Undo last change** (or one Ctrl+Z) reverts it all. If the answer can't be applied,
 the panel explains why and **Copy message for your assistant** gives you the exact errors to paste back.
+
+## Memory check
+
+**Memory** (main screen) estimates whether the sequence fits the Connect Module's MicroPython heap
+(11,968 bytes; the firmware takes 2,640, leaving about 9,330). It reads the Python the Sequencer generates
+from the canvas (read-only, the same generator the editor uses) and shows:
+
+- a verdict, **Fits**, **Tight** or **Likely too large**, with its confidence and the reasons. Two checks, and the
+  worse one wins: total size against loads that ran and failed, and the largest function against the largest
+  seen running (1,920 bytes; a function needs one unbroken piece of heap at load);
+- the model's cost (measured: 29 bytes a point), the program estimate, variables and functions;
+- where the program space goes, per function;
+- ways to cut: repeated statement runs (loop or shared function), model points copied to a variable and read
+  once, startup writes repeating a model default, and very large functions.
+
+Until there are readings from your controller, the verdict compares block counts with the loads measured so far
+(lighting and boiler sequences): block count is only a rough predictor, so confidence is low. **Add a reading**:
+paste the controller's GC lines and say whether the sequence ran. Readings are kept in this browser; with at least
+one load that ran and one that failed, the verdict switches to the byte estimate, and "max blk sz" readings
+rescale the estimate. If the generated Python can't be found, it falls back to about 12 bytes a block.
+
+**Exact .mpy size** (optional): deploy the Cloudflare Worker in `worker/` (repo), put its workers.dev address in
+**Settings**, and the memory check can send the generated Python there to get the real .mpy size. Only then does
+anything leave the browser, and only to that address.
 
 ## Logic map
 

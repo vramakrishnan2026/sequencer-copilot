@@ -1638,6 +1638,75 @@
   }
 
 
+  // ------------------------------------------------------- generated Python
+  // The Sequencer turns the canvas into Python with a Blockly code generator. Find the page's
+  // own generator (the one that knows the 75F blocks) and run it on the live canvas: this is
+  // read-only and is what the editor itself does to produce the controller's program.
+  function findPythonGenerator(B) {
+    const looksRight = (g) => !!g && typeof g === 'object' && typeof g.workspaceToCode === 'function';
+    // Blockly 10 keeps block generators in forBlock; older code assigns them on the generator.
+    const knows75f = (g) => ['model_block', 'conn_mod_get_universal_input_value']
+      .some((t) => typeof g.forBlock?.[t] === 'function' || typeof g[t] === 'function');
+    const isPython = (g) => /python/i.test(g.name_ || g.name || '') || typeof g.forBlock?.controls_if === 'function';
+    const candidates = [];
+    const add = (v) => {
+      if (looksRight(v)) candidates.push(v);
+      if (v && typeof v === 'object') {
+        for (const inner of ['pythonGenerator', 'Python', 'generator', 'default']) {
+          let g;
+          try { g = v[inner]; } catch { continue; }
+          if (looksRight(g)) candidates.push(g);
+        }
+      }
+    };
+    [B.Python, B.python, window.python, window.pythonGenerator, window.Blockly?.Python].forEach(add);
+    for (const key of Object.getOwnPropertyNames(window)) {
+      let v;
+      try { v = window[key]; } catch { continue; }
+      if (v && typeof v === 'object' && !(v instanceof Node)) add(v);
+    }
+    // The 75F app bundles its generator with webpack: look through modules it has already loaded
+    // (reading their exports only; nothing new is run).
+    for (const key of Object.getOwnPropertyNames(window).filter((k) => k.startsWith('webpackChunk'))) {
+      let req = null;
+      try { window[key].push([[`seq-copilot-gen-${Date.now()}-${Math.random()}`], {}, (r) => { req = r; }]); } catch { continue; }
+      for (const id of Object.keys(req?.c || {})) {
+        const exp = req.c[id]?.exports;
+        if (!exp || (typeof exp !== 'object' && typeof exp !== 'function')) continue;
+        add(exp);
+        for (const k of Object.keys(exp).slice(0, 200)) {
+          let v;
+          try { v = exp[k]; } catch { continue; }
+          add(v);
+        }
+      }
+    }
+    return candidates.find((g) => knows75f(g) && isPython(g)) || candidates.find(knows75f) || null;
+  }
+
+  function heapSource() {
+    const { B, ws } = env();
+    const all = ws.getAllBlocks(false);
+    const stacks = ws.getTopBlocks(true).map((top) => ({
+      type: top.type,
+      name: top.getFieldValue?.('NAME') || '',
+      blocks: top.getDescendants(false).length,
+    }));
+    let python = null;
+    let reason = '';
+    const gen = findPythonGenerator(B);
+    if (!gen) reason = 'The page\'s Python generator could not be found, so the estimate uses block counts.';
+    else {
+      try {
+        python = gen.workspaceToCode(ws);
+        if (typeof python !== 'string' || !python.trim()) { python = null; reason = 'The Python generator returned nothing for this canvas.'; }
+      } catch (err) {
+        reason = `The Python generator failed on this canvas: ${err.message}`;
+      }
+    }
+    return { python, reason, blocks: all.length, stacks, change: changeInfo() };
+  }
+
   // -------------------------------------------------------------- handlers
 
   const HANDLERS = {
@@ -1648,6 +1717,9 @@
       } catch (err) {
         return { ready: false, reason: err.message };
       }
+    },
+    heapSource() {
+      return heapSource();
     },
     getContext({ refreshCatalog } = {}) {
       const { B, ws } = env();
