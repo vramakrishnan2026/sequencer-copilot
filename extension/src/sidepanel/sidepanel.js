@@ -1,7 +1,9 @@
 import { SKILL_NAME, SKILL_REFERENCE, buildAssistantInstructions, buildExport, buildSkillMd, friendlyError, loadGuide, parsePastedPlan, repairMessage } from './export.js';
 import { makeZip } from './zip.js';
 import { createHeapView } from '../heap/view.js';
+import { createLiveView } from '../heap/live-view.js';
 let heap = null; // the memory check view, made when first opened
+let live = null; // the controller-on-USB card, made with it
 import { createSimulatorView } from '../simulator/view.js';
 import { addFindings, clearFindings, findingsMarkdown, loadFindings, parseFindings, removeFinding, stripFindings } from './findings.js';
 
@@ -295,6 +297,7 @@ $('openHeap').addEventListener('click', async () => {
       loadSource: () => bg('heapSource'),
       build: (python) => bg('mpyBuild', { python }),
       readingsOn: () => settings.heapReadingsOn,
+      onResult: () => live?.render(),
       onError: (err) => {
         $('heapSub').textContent = /Unknown method/.test(err.message)
           ? 'Reload the Sequencer tab once so the update reaches it, then try again.'
@@ -302,6 +305,7 @@ $('openHeap').addEventListener('click', async () => {
       },
     });
   }
+  if (!live) live = createLiveView($('liveRoot'), { canvas: () => heap?.current() ?? null });
   await loadHeap();
 });
 $('heapReload').addEventListener('click', loadHeap);

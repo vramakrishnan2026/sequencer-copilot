@@ -295,7 +295,14 @@ export function parseGcLog(text, hint = null) {
     before: t.slice(i ? at[i - 1] : 0, pos),
   })).filter((x) => x.gc);
   if (!items.length) return null;
-  let startIdx = items.findIndex((x) => /Configuring register|Module Loaded|Module Details/i.test(x.before));
+  // Start-up: its section (from "Enter Sequence") configured registers, or it's the first section
+  // after the module loaded and read no registers. A log that starts mid-way has no start-up reading.
+  let startIdx = items.findIndex((x) => {
+    const enter = x.before.search(/Enter Sequence(?![\s\S]*Enter Sequence)/i);
+    const section = enter >= 0 ? x.before.slice(enter) : x.before;
+    return /Configuring register/i.test(section)
+      || (/Module Loaded|Module Details/i.test(x.before) && !/readModbusRegister/i.test(section));
+  });
   let detected = startIdx >= 0;
   if (!detected && hint === 'startup') startIdx = 0;
   const startup = startIdx >= 0 ? items[startIdx].gc : null;

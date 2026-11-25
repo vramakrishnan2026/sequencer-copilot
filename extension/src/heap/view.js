@@ -39,7 +39,7 @@ async function loadReadings() {
 }
 const saveReadings = (list) => chrome.storage.local.set({ [READINGS_KEY]: list });
 
-export function createHeapView(root, { loadSource, build, readingsOn = () => false, onError }) {
+export function createHeapView(root, { loadSource, build, readingsOn = () => false, onError, onResult = () => {} }) {
   let last = null; // { src, result, readings, mpy }
 
   async function load() {
@@ -114,6 +114,15 @@ export function createHeapView(root, { loadSource, build, readingsOn = () => fal
     const parts = [simple, actions, exactCard(), toggle];
     if (showDetails) parts.push(...detailCards(src, result, readings));
     root.replaceChildren(...parts.filter(Boolean));
+    onResult(current());
+  }
+
+  /** What the controller card compares against: this canvas's name, size and prediction. */
+  function current() {
+    if (!last) return null;
+    const { est, verdict: v } = last.result;
+    return { name: last.src.sequence?.name || null, mpyBytes: est.mpyBytes, exact: !!est.exactMpy,
+      pct: v.pct, maxFreeBlocks: v.maxFree / HEAP.gcBlock };
   }
 
   // -------------------------------------------------------------- technical details
@@ -293,10 +302,11 @@ export function createHeapView(root, { loadSource, build, readingsOn = () => fal
   // Takes the result away (the canvas changed or another sequence is open) and offers to check again.
   function clear(message, onCheck) {
     last = null;
+    onResult(null);
     root.replaceChildren(el('section', { class: 'card heap-card heap-stale' },
       el('p', {}, message),
       el('button', { type: 'button', class: 'primary', onclick: onCheck }, 'Check memory again')));
   }
 
-  return { load, shownFor, clear, hasResult: () => last != null };
+  return { load, shownFor, clear, current, hasResult: () => last != null };
 }
