@@ -24,6 +24,13 @@ SCOPE = "https://www.googleapis.com/auth/chromewebstore"
 API = "https://chromewebstore.googleapis.com"
 
 
+def require(*names):
+    missing = [n for n in names if not os.environ.get(n, "").strip()]
+    if missing:
+        sys.exit("Missing " + ", ".join(missing) + ". Add them to the chrome-web-store environment in the repo's "
+                 "Settings > Environments (see docs/AUTO-DEPLOY.md). Nothing was uploaded.")
+
+
 def token():
     info = json.loads(os.environ["CWS_SERVICE_ACCOUNT_JSON"])
     creds = service_account.Credentials.from_service_account_info(info, scopes=[SCOPE])
@@ -48,6 +55,7 @@ def main():
         sys.exit(__doc__)
     zip_path = sys.argv[1]
     upload_only = "--upload-only" in sys.argv
+    require("CWS_SERVICE_ACCOUNT_JSON", "CWS_PUBLISHER_ID", "CWS_EXTENSION_ID")
     pub = os.environ["CWS_PUBLISHER_ID"]
     item = os.environ["CWS_EXTENSION_ID"]
     base = f"publishers/{pub}/items/{item}"
