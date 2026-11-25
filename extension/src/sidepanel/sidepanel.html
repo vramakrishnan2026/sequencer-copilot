@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sequencer Copilot</title>
+  <link rel="stylesheet" href="sidepanel.css">
+  <link rel="stylesheet" href="../simulator/simulator.css">
+</head>
+<body>
+  <!-- ============================================================ main view -->
+  <div id="mainView" class="view">
+    <header class="bar">
+      <span class="dot" id="statusDot" aria-hidden="true"></span>
+      <div class="bar-text">
+        <h1>Sequencer Copilot</h1>
+        <p id="statusText">Checking the canvas…</p>
+      </div>
+      <button id="openSettings" class="icon" type="button" aria-label="Settings" title="Settings">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </header>
+
+    <main id="scroll">
+      <div id="setupBanner" class="banner" hidden>
+        <span>Set up your AI assistant first.</span>
+        <button id="bannerSettings" class="link" type="button">Open settings</button>
+      </div>
+
+      <div class="seg" role="group" aria-label="What are you doing?">
+        <button type="button" data-mode="new" aria-pressed="true">New sequence</button>
+        <button type="button" data-mode="edit" aria-pressed="false">Edit this sequence</button>
+      </div>
+
+      <button id="openMap" type="button" class="full map-btn" disabled>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="6" height="5" rx="2.5"/><rect x="9" y="10" width="6" height="5"/><rect x="16" y="15" width="6" height="5"/><path d="M8 6.5h3.5v3.5M15 12.5h3.5V15"/></svg>
+        View logic map
+      </button>
+      <button id="openSimulator" type="button" class="full map-btn" disabled>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 3v18M12 3v18M18 3v18"/><rect x="3.5" y="13" width="5" height="3" rx="1" fill="currentColor"/><rect x="9.5" y="6" width="5" height="3" rx="1" fill="currentColor"/><rect x="15.5" y="10" width="5" height="3" rx="1" fill="currentColor"/></svg>
+        Simulate this sequence
+      </button>
+
+      <section class="card" aria-label="Steps">
+        <!-- New sequence -->
+        <div data-show="new" class="step">
+          <span class="num">1</span>
+          <div class="step-body">
+            <h2>Describe it to your assistant</h2>
+            <p class="hint" id="describeHint"></p>
+            <p id="notEmptyNote" class="note" hidden></p>
+          </div>
+        </div>
+
+        <!-- Edit this sequence -->
+        <div data-show="edit" class="step" hidden>
+          <span class="num">1</span>
+          <div class="step-body">
+            <h2>Download or copy this sequence</h2>
+            <div class="pair">
+              <button id="downloadSequence" type="button">Download this sequence</button>
+              <button id="copySequence" type="button">Copy</button>
+            </div>
+            <p id="lastDownload" class="hint"></p>
+          </div>
+        </div>
+        <div data-show="edit" class="step" hidden>
+          <span class="num">2</span>
+          <div class="step-body">
+            <h2>Attach or paste it, and ask</h2>
+            <p class="hint">Attach the file (or paste the copied text) in your assistant, then describe the change, or the problem you want diagnosed.</p>
+          </div>
+        </div>
+
+        <!-- Both -->
+        <form id="composer" class="step">
+          <span class="num" id="pasteNum">2</span>
+          <div class="step-body">
+            <h2><label for="answer">Paste the answer here</label></h2>
+            <textarea id="answer" rows="3" placeholder="Your assistant's whole reply, including the json block"></textarea>
+            <div class="right"><button id="reviewBtn" class="primary" type="submit">Review changes</button></div>
+          </div>
+        </form>
+      </section>
+
+      <div id="log" aria-live="polite"></div>
+    </main>
+
+    <footer class="foot">
+      <button id="undoBtn" class="link" type="button" disabled>Undo last change</button>
+      <span><span id="guideVersion"></span>Made by Vinay</span>
+    </footer>
+  </div>
+
+  <!-- ======================================================== settings view -->
+  <div id="simView" class="view" hidden>
+    <header class="bar">
+      <button id="closeSim" class="icon" type="button" aria-label="Back"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+      <div class="bar-text">
+        <h1>Simulator</h1>
+        <p id="simSub">Virtual inputs through this canvas's logic</p>
+      </div>
+      <button id="simReload" class="icon" type="button" aria-label="Read the canvas again" title="Read the canvas again"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>
+    </header>
+    <main id="simRoot"></main>
+  </div>
+
+  <!-- ======================================================== settings view -->
+  <div id="settingsView" class="view" hidden>
+    <header class="bar">
+      <button id="closeSettings" class="icon" type="button" aria-label="Back">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <h1>Settings</h1>
+    </header>
+
+    <main>
+      <section class="card">
+        <div class="section-head">
+          <h2>AI assistant setup</h2>
+          <p class="hint" id="setupSub">Do this once, and again when the guide changes.</p>
+        </div>
+        <fieldset>
+          <legend>My assistant is</legend>
+          <label class="radio"><input type="radio" name="assistant" value="chatgpt"><span>ChatGPT (skill)</span></label>
+          <label class="radio"><input type="radio" name="assistant" value="antigravity"><span>Google Antigravity (skill)</span></label>
+          <label class="radio"><input type="radio" name="assistant" value="copilot"><span>Microsoft 365 Copilot (agent)</span></label>
+          <label class="radio"><input type="radio" name="assistant" value="claude"><span>Claude (Project)</span></label>
+          <label class="radio"><input type="radio" name="assistant" value="other"><span>Another assistant</span></label>
+        </fieldset>
+        <ol id="setupSteps" class="setup-steps" aria-label="Setup steps"></ol>
+        <p id="setupNote" class="note"></p>
+        <p id="settingsMsg" class="hint ok" role="status"></p>
+      </section>
+
+      <section class="card">
+        <div class="section-head"><h2>Change preview</h2></div>
+        <label class="toggle">
+          <span><span>Show block types under each change</span><span class="hint">For example conn_mod_set_relay_output</span></span>
+          <input id="showTypes" type="checkbox">
+        </label>
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <h2>Lessons to review</h2>
+          <p class="hint" id="lessonsSummary"></p>
+        </div>
+        <details id="lessonsDetails">
+          <summary>Show lessons</summary>
+          <ul id="lessonsList"></ul>
+        </details>
+        <div class="row">
+          <button id="downloadLessons" type="button" class="small">Download</button>
+          <button id="copyLessons" type="button" class="small">Copy</button>
+          <button id="clearLessons" type="button" class="small">Clear</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <h2>Troubleshooting</h2>
+          <p class="hint">Copies how the Sequencer's model point blocks work on this page, to send to whoever maintains the extension. Nothing is changed.</p>
+        </div>
+        <div class="row"><button id="copyDiagnostics" type="button" class="small">Copy model point details</button></div>
+        <p id="diagMsg" class="hint" role="status"></p>
+      </section>
+
+      <section class="card">
+        <div class="section-head"><h2>About</h2></div>
+        <p class="hint" id="about"></p>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Logic map · Sequencer Copilot</title>
+  <link rel="stylesheet" href="map.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="bar-text">
+      <h1 id="title">Logic map</h1>
+      <p id="subtitle"></p>
+    </div>
+    <div class="seg" id="views" role="group" aria-label="View">
+      <button type="button" data-view="flow" aria-pressed="true" title="The steps in running order, with each if/else as a decision">Flowchart</button>
+      <button type="button" data-view="signals" aria-pressed="false" title="What each output, register and variable is worked out from">Signals</button>
+    </div>
+    <div class="seg" id="scope" role="group" aria-label="What to show" hidden>
+      <button type="button" data-scope="changes" aria-pressed="true">Changes only</button>
+      <button type="button" data-scope="all" aria-pressed="false">Whole sequence</button>
+    </div>
+    <div class="tools" role="group" aria-label="Zoom">
+      <button type="button" class="icon" id="zoomOut" aria-label="Zoom out" title="Zoom out (−)">−</button>
+      <button type="button" class="icon" id="zoomIn" aria-label="Zoom in" title="Zoom in (+)">+</button>
+      <button type="button" id="fit" title="Fit to window (0)">Fit</button>
+    </div>
+    <div class="tools">
+      <button type="button" id="copyMermaid">Copy as Mermaid</button>
+      <button type="button" id="downloadSvg">Download SVG</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside id="aside" aria-label="About this sequence">
+      <section id="changeNote" class="note" hidden></section>
+
+      <section>
+        <h2>How to read it</h2>
+        <ul class="legend" id="flowLegend">
+          <li><span class="swatch run" aria-hidden="true"></span>Where a run starts and ends</li>
+          <li><span class="swatch var" aria-hidden="true"></span>Readings and calculations</li>
+          <li><span class="swatch output" aria-hidden="true"></span>Outputs, registers and home screen being set</li>
+          <li><span class="swatch ask" aria-hidden="true"></span>A decision: Yes and No lead to different steps</li>
+        </ul>
+        <ul class="legend" id="signalLegend" hidden>
+          <li><span class="swatch input" aria-hidden="true"></span>Inputs and readings: sensors, registers, model points</li>
+          <li><span class="swatch var" aria-hidden="true"></span>Variables, with how each is worked out</li>
+          <li><span class="swatch output" aria-hidden="true"></span>Outputs and writes, with the values sent</li>
+          <li><span class="line solid" aria-hidden="true"></span>Feeds the value</li>
+          <li><span class="line dashed" aria-hidden="true"></span>Decides when it's written (an if/else condition)</li>
+        </ul>
+        <ul class="legend" id="diffLegend" hidden>
+          <li><span class="swatch added" aria-hidden="true"></span>Added by this change</li>
+          <li><span class="swatch changed" aria-hidden="true"></span>Value changed</li>
+          <li id="removedKey"><span class="swatch removed" aria-hidden="true"></span>Removed by this change</li>
+        </ul>
+      </section>
+
+      <section id="removedList" hidden></section>
+
+      <section id="runs"></section>
+      <section id="setup"></section>
+      <p class="hint" id="captured"></p>
+      <p class="hint">Sequencer Copilot · Made by Vinay</p>
+    </aside>
+
+    <main id="stage" tabindex="0" aria-label="Logic map. Drag to move, scroll to zoom.">
+      <div id="canvas"></div>
+      <div id="empty" class="empty" hidden></div>
+    </main>
+  </div>
+
+  <script src="../../lib/mermaid.min.js"></script>
+  <script type="module" src="map.js"></script>
+</body>
+</html>

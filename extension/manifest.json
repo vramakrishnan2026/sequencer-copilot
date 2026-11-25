@@ -1,0 +1,63 @@
+{
+  "manifest_version": 3,
+  "name": "75F Sequencer Copilot",
+  "version": "0.7.4",
+  "description": "Helps AI assistants build logic on the 75F Site Sequencer: applies pasted plans, draws logic maps and simulates the sequence.",
+  "author": "Vinay",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "sidePanel",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://*.75f.io/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/sidepanel.html"
+  },
+  "action": {
+    "default_title": "Open Sequencer Copilot",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.75f.io/*"
+      ],
+      "js": [
+        "src/content/bridge-main.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_idle",
+      "all_frames": true,
+      "match_origin_as_fallback": true
+    },
+    {
+      "matches": [
+        "https://*.75f.io/*"
+      ],
+      "js": [
+        "src/content/bridge-isolated.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true,
+      "match_origin_as_fallback": true
+    }
+  ]
+}

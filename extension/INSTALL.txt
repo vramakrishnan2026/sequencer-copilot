@@ -1,0 +1,31 @@
+75F Sequencer Copilot v0.7.4 - installation
+
+Requirements: Google Chrome 116 or later, and access to the Site Sequencer at
+https://internal.75f.io/site-sequencer or https://altius.75f.io/site-sequencer.
+
+1. Unzip this file somewhere permanent (for example Documents/75f-sequencer-copilot).
+   Chrome loads the extension from this folder, so don't delete or move it afterwards.
+2. Open chrome://extensions in Chrome.
+3. Turn on "Developer mode" (top right).
+4. Click "Load unpacked" and select the unzipped 75f-sequencer-copilot folder
+   (the one that contains manifest.json).
+5. Optional: click the puzzle-piece icon in the toolbar and pin "75F Sequencer Copilot".
+6. Open the Site Sequencer, open a sequence, then click the extension icon to open the side panel.
+   It should say "Connected to Site Sequencer" with the number of blocks on the canvas.
+   If it doesn't, reload the Sequencer tab once.
+
+Updating to a newer version: replace the folder's contents with the new files,
+then click the reload icon on the extension's card in chrome://extensions,
+and reload the Sequencer tab so the page picks up the new version.
+
+Chrome may show a "Disable developer mode extensions" warning at startup. That is
+normal for extensions not installed from the Chrome Web Store; choose to keep it.
+
+First use: click the gear icon and follow "AI assistant setup" once.
+
+What it does: it prepares files for an AI assistant (the block list, and the open
+sequence when you're editing one), then checks the assistant's answer, shows each
+change in plain words, and applies it with one-step undo. View logic map draws
+the sequence (or a proposed change) as a diagram of what each output is worked out from. It stores no API keys and makes no calls
+to any AI service. See README.md for details and TESTING-CHATGPT.md for the
+ChatGPT setup.
