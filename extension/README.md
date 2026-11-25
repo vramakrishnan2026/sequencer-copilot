@@ -1,4 +1,4 @@
-# 75F Sequencer Copilot (Chrome MV3), v0.9.4
+# 75F Sequencer Copilot (Chrome MV3), v0.9.5
 
 Made by Vinay.
 
@@ -28,32 +28,31 @@ the panel explains why and **Copy message for your assistant** gives you the exa
 
 ## Memory check
 
-**Memory** (main screen) estimates whether the sequence fits the Connect Module's MicroPython heap
-(11,968 bytes; the firmware takes 2,640, leaving about 9,330). It works from the Python the Sequencer generates. The Sequencer keeps its generator private, so the extension
-notes it the first time the Sequencer uses it, and keeps a copy of the code the Sequencer sends to its compiler when
-it builds (read-only; nothing is changed or blocked). After a page load, build once in the Sequencer (or anything
-that makes it generate code); from then on the memory check generates code for the live canvas itself. It shows:
+**Memory** (main screen) says whether the sequence fits the Connect Module's MicroPython heap (11,968 bytes; the
+firmware takes 2,640, leaving about 9,330 for a sequence), in plain words first:
 
-- a verdict, **Fits**, **Tight** or **Likely too large**, with its confidence and the reasons. Two checks, and the
-  worse one wins: total size against loads that ran and failed, and the largest function against the largest
-  seen running (1,920 bytes; a function needs one unbroken piece of heap at load);
-- the model's cost (measured: 29 bytes a point), the program estimate, variables and functions;
-- where the program space goes, per function;
-- ways to cut: repeated statement runs (loop or shared function), model points copied to a variable and read
-  once, startup writes repeating a model default, and very large functions.
+- **Fits comfortably / Getting full / Likely too big**, with a gauge of how much of the sequence memory it uses
+  (getting full from 75%, likely too big from 94%: the boiler ran pinned at ~90% and its 10% bigger original failed);
+- a note when it runs so often that temporary data fills the free memory within a minute (a slower run rate helps);
+- up to three things to do, in plain words;
+- **Check with the 75F compiler (more accurate)**: compiles the canvas from inside the Sequencer page with the
+  current sign-in (the token never leaves the page) and replaces the estimate with real compiled sizes.
 
-Until there are readings from your controller, the verdict compares block counts with the loads measured so far
-(lighting and boiler sequences): block count is only a rough predictor, so confidence is low. **Add a reading**:
-paste the controller's GC lines and say whether the sequence ran. Readings are kept in this browser; with at least
-one load that ran and one that failed, the verdict switches to the byte estimate, and "max blk sz" readings
-rescale the estimate. If the generated Python can't be found, it falls back to about 12 bytes a block.
+**Show details** opens the technical view: how the verdict was reached, the byte breakdown (model at a measured
+29 bytes a point; program; the cost of running it: variable values, the globals table, function bookkeeping),
+size per function, the detailed ways to cut, and **Add a reading from the controller**.
 
-**Get exact sizes from the 75F compiler** compiles the canvas with 75F's py-to-mpy service (the compiler the
-Sequencer itself uses), from inside the Sequencer page with the person's current sign-in. The sign-in token stays in
-the page: it is used only for that request and never reaches the extension or its storage. The returned .mpy is read
-to get the real compiled size of the module and of each function, which then replace the estimates (the largest
-function is the figure that maps to "max blk sz"). Loose blocks lying on the canvas outside Startup, Continuous and
-functions are flagged too: they still compile into the program.
+The code comes from the Sequencer itself: the extension notes the Sequencer's own Python generator when it runs,
+and keeps the Python the Sequencer sends to its compiler when it builds (read-only). After a page load, build once
+in the Sequencer; from then on it generates code for the live canvas.
+
+Readings: paste several GC lines (right after the push and a minute or two later). The lowest "used" is kept,
+because temporary data builds up between clean-ups (measured swings of ~7 KB at a 1 s run rate). Each reading is
+tied to its sequence and size and used only for that sequence: a "failed" reading at the same size makes the
+verdict "likely too big"; a higher "ran" reading outranks a lower estimate.
+
+Checked against the controller: a small sequence measured 624 bytes above baseline, estimated 636 from its
+compiled code.
 
 ## Logic map
 

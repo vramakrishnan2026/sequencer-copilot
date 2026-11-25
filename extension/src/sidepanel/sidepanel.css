@@ -245,3 +245,15 @@ label.field input { width: 100%; min-height: 38px; padding: 6px 10px; border: 1p
 .heap-readings li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px; }
 .heap-readings .link { margin-left: auto; font-size: 12px; }
 .outcome-ok { color: var(--ok); font-weight: 600; } .outcome-bad { color: var(--danger); font-weight: 600; }
+
+/* ---- Memory check simple view (0.9.5) ---- */
+.heap-verdict p { margin: 0; font-size: 14px; }
+.heap-gauge { position: relative; height: 16px; border-radius: 8px; background: var(--line); overflow: hidden; margin-top: 4px; }
+.heap-gauge .fill { position: absolute; inset: 0 auto 0 0; border-radius: 8px; }
+.heap-gauge .fill.ok { background: var(--ok); } .heap-gauge .fill.warn { background: var(--heap-warn); } .heap-gauge .fill.bad { background: var(--danger); }
+.heap-gauge .mark { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--plate); opacity: .8; }
+.heap-gauge-scale { display: flex; justify-content: space-between; font-size: 12px; }
+.heap-measured { font-weight: 600; }
+.heap-measured.ok { color: var(--ok); } .heap-measured.bad { color: var(--danger); }
+.heap-toggle { align-self: center; font-size: 13px; padding: 4px 8px; }
+.heap-others summary { cursor: pointer; font-size: 13px; color: var(--muted); padding: 4px 0; }

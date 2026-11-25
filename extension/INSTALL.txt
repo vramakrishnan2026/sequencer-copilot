@@ -1,4 +1,4 @@
-75F Sequencer Copilot v0.9.4 - installation
+75F Sequencer Copilot v0.9.5 - installation
 
 Requirements: Google Chrome 116 or later, and access to the Site Sequencer at
 https://internal.75f.io/site-sequencer or https://altius.75f.io/site-sequencer.

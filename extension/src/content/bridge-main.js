@@ -1779,7 +1779,19 @@
     if (!python && !reason) {
       reason = 'The Sequencer hasn\'t generated code since this page loaded, so the estimate uses block counts. Build the sequence once in the Sequencer (the step that compiles it for the controller), then read the canvas again here.';
     }
-    return { python, reason, source, builtAt: build?.at || null, blocks: all.length, stacks, change: changeInfo() };
+    // Which sequence this is, so readings stay with it: the page address, plus a readable name.
+    let name = '';
+    try {
+      const mb = all.find((b) => b.type === 'model_block');
+      name = (document.title || '').trim();
+      const modelText = mb?.getField?.('selected_model')?.getText?.();
+      if (modelText && modelText !== 'select model') name = name ? `${name} · ${modelText}` : modelText;
+    } catch { /* name is optional */ }
+    const rateBlock = all.find((b) => b.type === 'sequence_run_continuous')?.getInputTargetBlock?.('run_rate');
+    const runRate = Number(rateBlock?.getFieldValue?.('NUM'));
+    return { python, reason, source, builtAt: build?.at || null, blocks: all.length, stacks, change: changeInfo(),
+      sequence: { key: `${location.pathname}${location.search}${location.hash}`, name },
+      runRate: Number.isFinite(runRate) && runRate > 0 ? runRate : null };
   }
 
   // ----------------------------------------------------- real build (py-to-mpy)

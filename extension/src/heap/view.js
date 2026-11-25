@@ -21,10 +21,17 @@ function el(tag, attrs = {}, ...kids) {
 }
 
 const LEVEL = {
-  fits: { label: 'Fits', cls: 'ok' },
-  tight: { label: 'Tight', cls: 'warn' },
-  'too-large': { label: 'Likely too large', cls: 'bad' },
+  fits: { label: 'Fits comfortably', cls: 'ok' },
+  tight: { label: 'Getting full', cls: 'warn' },
+  'too-large': { label: 'Likely too big', cls: 'bad' },
 };
+
+// One sentence for a non-specialist, per verdict.
+function plainSummary(v) {
+  if (v.level === 'fits') return `This sequence uses about ${v.share} of the memory the controller has for sequences. There's plenty of room.`;
+  if (v.level === 'tight') return `This sequence uses about ${v.share} of the memory the controller has for sequences. It should run, but there's little room left, so it can stop with a memory error when memory runs short.`;
+  return `This sequence needs about ${v.share} of the memory the controller has for sequences, which is more than is safely available. It's likely to stop with a memory error.`;
+}
 
 async function loadReadings() {
   const got = await chrome.storage.local.get(READINGS_KEY);
@@ -52,16 +59,54 @@ export function createHeapView(root, { loadSource, build, onError }) {
     }
   }
 
+  let showDetails = false;
+
   function render() {
     const { src, result, readings } = last;
     const { est, analysis, verdict: v, suggestions } = result;
     const lv = LEVEL[v.level];
 
-    const verdictCard = el('section', { class: `heap-verdict ${lv.cls}`, 'aria-live': 'polite' },
+    // ---------------------------------------------------------------- simple view
+    const gaugePct = Math.min(100, Math.round(v.pct * 100));
+    const gauge = el('div', { class: 'heap-gauge', role: 'img', 'aria-label': `About ${gaugePct}% of the memory for sequences` },
+      el('span', { class: `fill ${lv.cls}`, style: `width:${gaugePct}%` }),
+      el('i', { class: 'mark tight', style: `left:${HEAP.tightFrom * 100}%` }),
+      el('i', { class: 'mark full', style: `left:${HEAP.tooLargeFrom * 100}%` }));
+    const measuredLine = v.measured
+      ? el('p', { class: v.measured.outcome === 'ran' ? 'heap-measured ok' : 'heap-measured bad' },
+        v.measured.outcome === 'ran' ? 'Measured on the controller: it ran.' : 'Measured on the controller: it failed.')
+      : null;
+    const simple = el('section', { class: `heap-verdict ${lv.cls}`, 'aria-live': 'polite' },
       el('div', { class: 'heap-level' }, lv.label),
-      el('p', { class: 'hint' }, `An estimate, ${v.confidence} confidence. ${v.realReadings
-        ? `Uses ${v.realReadings} reading${v.realReadings > 1 ? 's' : ''} from your controller.`
-        : 'Add a reading from your controller below to make it sharper.'}`),
+      gauge,
+      el('div', { class: 'heap-gauge-scale hint' }, el('span', {}, 'Empty'), el('span', {}, `About ${gaugePct}% used`), el('span', {}, 'Full')),
+      el('p', {}, plainSummary(v)),
+      v.plain.map((t) => el('p', {}, t)),
+      measuredLine,
+      el('p', { class: 'hint' }, `Worked out from ${v.basis}${v.basis === 'a reading from the controller' || est.exact ? '' : '; an estimate'}.`));
+
+    const todo = suggestions.filter((x) => x.plain).slice(0, 3);
+    const actions = todo.length
+      ? el('section', { class: 'card heap-card' },
+        el('h2', {}, v.level === 'fits' ? 'Ways to save memory' : 'What you can do'),
+        el('ol', { class: 'heap-cuts' }, todo.map((x) => el('li', {}, x.plain))))
+      : null;
+
+    const toggle = el('button', { type: 'button', class: 'link heap-toggle', 'aria-expanded': String(showDetails) },
+      showDetails ? 'Hide details' : 'Show details');
+    toggle.addEventListener('click', () => { showDetails = !showDetails; render(); });
+
+    const parts = [simple, actions, exactCard(), toggle];
+    if (showDetails) parts.push(...detailCards(src, result, readings));
+    root.replaceChildren(...parts.filter(Boolean));
+  }
+
+  // -------------------------------------------------------------- technical details
+  function detailCards(src, result, readings) {
+    const { est, analysis, verdict: v, suggestions } = result;
+    const lv = LEVEL[v.level];
+    const reasons = el('section', { class: 'card heap-card' },
+      el('h2', {}, 'How the verdict was reached'),
       el('ul', { class: 'heap-reasons' }, v.reasons.map((r) => el('li', {}, r))));
 
     const used = Math.min(1, (HEAP.baseline + est.total) / HEAP.total);
@@ -69,9 +114,9 @@ export function createHeapView(root, { loadSource, build, onError }) {
     const bar = el('div', { class: 'heap-bar', role: 'img', 'aria-label': `About ${Math.round(used * 100)}% of the heap` },
       el('span', { class: 'firmware', style: `width:${base * 100}%` }),
       el('span', { class: `program ${lv.cls}`, style: `width:${Math.max(0, used - base) * 100}%` }));
-
     const row = (label, value, note) => el('div', { class: 'heap-row' },
       el('span', {}, label), el('strong', {}, value), note ? el('span', { class: 'hint' }, note) : null);
+    const approx = est.exact ? '' : '≈ ';
     const numbers = el('section', { class: 'card heap-card' },
       el('h2', {}, 'Estimated heap use'),
       bar,
@@ -83,16 +128,16 @@ export function createHeapView(root, { loadSource, build, onError }) {
       est.model != null
         ? row(`Model (${analysis.modelPoints} point${analysis.modelPoints === 1 ? '' : 's'})`, fmtBytes(est.model), `measured, ${HEAP.modelPerPoint} bytes a point`)
         : null,
-      row('Program', `${est.exact ? '' : '≈ '}${fmtBytes(est.program)}`, est.exact
-        ? 'compiled code from the 75F compiler, plus names'
-        : est.fromPython
-          ? (est.scaleReadings ? `scaled ×${est.scale.toFixed(2)} from ${est.scaleReadings} reading${est.scaleReadings > 1 ? 's' : ''}` : 'estimated from the generated Python')
-          : 'rough: about 12 bytes a block'),
+      row('Program', `${approx}${fmtBytes(est.program)}`, est.exact
+        ? 'compiled code, names and constants from the 75F compiler'
+        : est.fromPython ? 'estimated from the generated code' : 'rough: about 11 bytes a block'),
+      est.runtime ? row('Running it', `≈ ${fmtBytes(est.runtime)}`, 'variable values, globals table, function bookkeeping') : null,
       row('Sequence total', `≈ ${fmtBytes(est.total)}`, `of about ${fmtBytes(HEAP.budget)} left by the firmware`),
       est.largest ? row('Largest function', `${est.largest.exact ? '' : '≈ '}${fmtBytes(est.largest.bytes)}`, `${est.largest.name}${est.largest.exact ? ', compiled' : ''}`) : null,
+      est.garbage ? row('Temporary data per run', `≈ ${fmtBytes(est.garbage.perRun)}`, `runs every ${est.garbage.runRate} s (rough)`) : null,
       analysis ? row('Variables · functions', `${analysis.variables} · ${analysis.functions}`) : null,
       row('Blocks on canvas', String(est.blocks)),
-      !est.fromPython ? el('p', { class: 'note' }, src.reason || 'Generated Python not available.') : null,
+      !est.fromPython ? el('p', { class: 'note' }, src.reason || 'Generated code not available.') : null,
       est.fromPython ? el('p', { class: 'hint' }, {
         build: `Code: the Sequencer's own build at ${clockOf(src.builtAt)}, and the canvas hasn't changed since.`,
         'old-build': `Code: the Sequencer's build at ${clockOf(src.builtAt)}. The canvas has changed since, so build again in the Sequencer for current figures.`,
@@ -102,36 +147,36 @@ export function createHeapView(root, { loadSource, build, onError }) {
     let where = null;
     if (analysis) {
       const label = (n) => (n === '(module)' ? 'Module setup and superloop' : n);
-      const parts = (est.exact
+      const items = (est.exact
         ? [{ name: label('(module)'), bytes: est.exact.module }, ...est.exact.functions]
-        : analysis.sections.map((s) => ({ name: label(s.name), bytes: (s.bytes + s.data) * est.scale })))
-        .concat(analysis.names ? [{ name: 'Names (variables and functions)', bytes: analysis.names * est.scale }] : [])
+        : analysis.sections.map((x) => ({ name: label(x.name), bytes: x.bytes + x.data })))
+        .concat([{ name: 'Names', bytes: est.exact ? est.exact.namesBytes : analysis.names }])
         .sort((a, b) => b.bytes - a.bytes)
         .slice(0, 8);
-      const max = Math.max(...parts.map((p) => p.bytes), 1);
+      const max = Math.max(...items.map((p) => p.bytes), 1);
       where = el('section', { class: 'card heap-card' },
         el('h2', {}, 'Where the program space goes'),
-        el('p', { class: 'hint' }, est.exact ? 'Compiled code per function, from the 75F compiler.' : 'Estimated. Model points are counted above, not here.'),
-        parts.map((p) => el('div', { class: 'heap-part' },
-          el('div', { class: 'heap-part-label' }, el('span', {}, p.name), el('span', { class: 'hint' }, `${est.exact ? '' : '≈ '}${fmtBytes(p.bytes)}`)),
+        el('p', { class: 'hint' }, est.exact ? 'Compiled code per function, from the 75F compiler.' : 'Estimated. The model is counted separately.'),
+        items.map((p) => el('div', { class: 'heap-part' },
+          el('div', { class: 'heap-part-label' }, el('span', {}, p.name), el('span', { class: 'hint' }, `${approx}${fmtBytes(p.bytes)}`)),
           el('div', { class: 'heap-part-bar' }, el('span', { style: `width:${(p.bytes / max) * 100}%` })))));
     }
 
-    const cuts = el('section', { class: 'card heap-card' },
-      el('h2', {}, 'Ways to cut'),
-      suggestions.length
-        ? el('ol', { class: 'heap-cuts' }, suggestions.map((s) => el('li', {}, s.text)))
-        : el('p', { class: 'hint' }, analysis ? 'Nothing obvious found: no repeated runs, single-use model reads, repeated defaults or loose blocks.' : 'Needs the generated code: build the sequence once in the Sequencer, then read the canvas again (↻).'));
+    const cuts = suggestions.length
+      ? el('section', { class: 'card heap-card' },
+        el('h2', {}, 'Ways to cut, in detail'),
+        el('ol', { class: 'heap-cuts' }, suggestions.map((x) => el('li', {}, x.text))))
+      : null;
 
-    root.replaceChildren(...[verdictCard, numbers, where, cuts, exactCard(), calibrateCard(readings)].filter(Boolean));
+    return [reasons, numbers, where, cuts, calibrateCard(readings, result.own)];
   }
 
   function exactCard() {
     if (!last.src.python) return null;
     const out = el('p', { class: 'hint' }, last.mpy
       ? `Built ${new Date(last.mpy.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}: .mpy file ${fmtBytes(last.mpy.total)} (code ${fmtBytes(last.mpy.code)}, names ${fmtBytes(last.mpy.namesBytes)}${last.mpy.objects ? `, ${last.mpy.objects} constants ${fmtBytes(last.mpy.consts.bytes)}` : ''}). The sizes above now use the compiled code.`
-      : 'Compiles this canvas with 75F\'s py-to-mpy service, the compiler the Sequencer itself uses, with your current sign-in. Nothing is saved there, and the result replaces the estimates above with real code sizes.');
-    const btn = el('button', { type: 'button' }, last.mpy ? 'Build again' : 'Get exact sizes from the 75F compiler');
+      : 'Compiles this canvas the way the Sequencer does, using your current sign-in, and replaces the estimate with real sizes. Nothing is saved.');
+    const btn = el('button', { type: 'button' }, last.mpy ? 'Check again with the 75F compiler' : 'Check with the 75F compiler (more accurate)');
     btn.addEventListener('click', async () => {
       btn.disabled = true;
       out.textContent = 'Compiling…';
@@ -148,10 +193,11 @@ export function createHeapView(root, { loadSource, build, onError }) {
         out.textContent = /Unknown method/.test(err.message) ? 'Reload the Sequencer tab once so the update reaches it, then try again.' : err.message;
       }
     });
-    return el('section', { class: 'card heap-card' }, el('h2', {}, 'Exact sizes'), btn, out);
+    return el('section', { class: 'card heap-card' }, btn, out);
   }
 
-  function calibrateCard(readings) {
+  function calibrateCard(readings, own) {
+    const seq = last.src.sequence || null;
     const ta = el('textarea', { id: 'gcLine', rows: '6', 'aria-describedby': 'gcHelp',
       placeholder: 'GC: total: 11968, used: …, free: …\nNo. of 1-blocks: …, max blk sz: …, max free sz: …\n(paste several readings)' });
     const ran = el('input', { type: 'radio', name: 'gcOutcome', value: 'ran', checked: true });
@@ -161,46 +207,55 @@ export function createHeapView(root, { loadSource, build, onError }) {
     save.addEventListener('click', async () => {
       const all = parseGcLines(ta.value);
       if (!all) { msg.textContent = 'Paste the lines that start with "GC: total:".'; return; }
-      const gc = all.low;
-      const a = last.result.analysis;
+      const est = last.result.est;
       const reading = {
         at: new Date().toISOString(),
+        sequence: seq,
         outcome: failed.checked ? 'failed' : 'ran',
-        blocks: last.result.est.blocks,
-        // Unscaled estimates, so later scale changes don't feed back into the readings.
-        total: a ? a.modelPoints * HEAP.modelPerPoint + a.program : null,
-        largestEst: a?.largest?.bytes ?? null,
-        largestName: a?.largest?.name ?? null,
+        blocks: est.blocks,
+        total: est.total,
+        largestEst: est.largest?.bytes ?? null,
+        largestName: est.largest?.name ?? null,
+        exact: !!est.exact,
+        gc: all.low,
         gcHigh: all.readings.length > 1 ? all.high : null,
         gcCount: all.readings.length,
         gcSteady: all.steady,
-        mpy: last.mpy ? { total: last.mpy.total, code: last.mpy.code, largest: last.result.est.largest?.bytes ?? null } : null,
-        gc,
       };
-      const list = [reading, ...(await loadReadings())].slice(0, 50);
-      await saveReadings(list);
+      // One reading per sequence and size: a new one replaces the old.
+      const kept = (await loadReadings()).filter((r) => !(seq && r.sequence?.key === seq.key && r.blocks === reading.blocks));
+      await saveReadings([reading, ...kept].slice(0, 50));
       await load();
     });
-    const list = readings.length
-      ? el('ul', { class: 'heap-readings' }, readings.map((r, i) => el('li', {},
-        el('span', { class: r.outcome === 'ran' ? 'outcome-ok' : 'outcome-bad' }, r.outcome === 'ran' ? 'Ran' : 'Failed'),
-        el('span', {}, ` · ${new Date(r.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} · ${r.blocks} blocks · used ${r.gc.used}${r.gcHigh ? `–${r.gcHigh.used}` : ''}${r.gcCount > 1 ? ` (${r.gcCount} readings${r.gcSteady ? ', steady' : ''})` : ' (1 reading)'}${r.gc.maxBlk != null ? ` · max blk ${r.gc.maxBlk}` : ''}`),
-        el('button', { type: 'button', class: 'link', 'aria-label': 'Delete this reading', onclick: async () => {
-          const next = (await loadReadings()).filter((_, j) => j !== i);
-          await saveReadings(next);
-          await load();
-        } }, 'Delete'))))
-      : null;
+
+    const item = (r) => el('li', {},
+      el('span', { class: r.outcome === 'ran' ? 'outcome-ok' : 'outcome-bad' }, r.outcome === 'ran' ? 'Ran' : 'Failed'),
+      el('span', {}, ` · ${new Date(r.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} · ${r.blocks} blocks · used ${r.gc.used}${r.gcHigh ? `–${r.gcHigh.used}` : ''}${r.gcCount > 1 ? ` (${r.gcCount} readings${r.gcSteady ? ', steady' : ''})` : ' (1 reading)'}${r.gc.maxBlk != null ? ` · max blk ${r.gc.maxBlk}` : ''}`),
+      el('button', { type: 'button', class: 'link', 'aria-label': 'Delete this reading', onclick: async () => {
+        await saveReadings((await loadReadings()).filter((x) => x.at !== r.at));
+        await load();
+      } }, 'Delete'));
+    const others = readings.filter((r) => !own.includes(r));
+    const groups = new Map();
+    for (const r of others) {
+      const name = r.sequence?.name || (r.sequence ? 'Unnamed sequence' : 'Saved before sequences were recorded');
+      if (!groups.has(name)) groups.set(name, []);
+      groups.get(name).push(r);
+    }
+
     return el('section', { class: 'card heap-card' },
       el('h2', {}, 'Add a reading from the controller'),
-      el('p', { class: 'hint', id: 'gcHelp' }, 'Push this canvas, then paste the GC lines from right after the push and from a minute or two later, all together, and say whether it ran. Garbage builds up between clean-ups, so one reading is only a snapshot: the lowest "used" is kept as the sequence\'s real size. Readings stay in this browser.'),
+      el('p', { class: 'hint', id: 'gcHelp' }, `Push this canvas, then paste the GC lines from right after the push and from a minute or two later, all together, and say whether it ran. The lowest "used" is kept as the sequence's real size. Readings are kept for this sequence${seq?.name ? ` (${seq.name})` : ''} only, in this browser.`),
       ta,
       el('div', { class: 'heap-outcome', role: 'radiogroup', 'aria-label': 'Did it run?' },
         el('label', { class: 'radio' }, ran, el('span', {}, 'It ran')),
         el('label', { class: 'radio' }, failed, el('span', {}, 'It failed'))),
       save, msg,
-      readings.length ? el('h3', { class: 'heap-sub' }, 'Saved readings') : null,
-      list);
+      own.length ? el('h3', { class: 'heap-sub' }, 'This sequence') : null,
+      own.length ? el('ul', { class: 'heap-readings' }, own.map(item)) : null,
+      others.length ? el('details', { class: 'heap-others' },
+        el('summary', {}, `Other sequences (${others.length})`),
+        [...groups].flatMap(([name, list]) => [el('h3', { class: 'heap-sub' }, name), el('ul', { class: 'heap-readings' }, list.map(item))])) : null);
   }
 
   return { load };

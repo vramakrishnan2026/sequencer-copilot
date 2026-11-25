@@ -20,6 +20,20 @@ export const HEAP = {
   firmwareBlock: 800, // "max blk sz" 50 blocks with nothing loaded
   modelPerPoint: 29,
   largestRan: 1920, // largest "max blk sz" seen on a load that ran (120 blocks)
+  // Verdict bands, as a share of what the firmware leaves for a sequence. Measured: the boiler at
+  // ~8,400 (90%) ran pinned at the limit with 80 bytes of largest free piece; its 10% bigger
+  // original failed.
+  tightFrom: 0.75,
+  tooLargeFrom: 0.94,
+  // Costs of running a program that aren't in the compiled file (MicroPython object sizes on a
+  // 32-bit port; checked against the boiler, 8,432 measured with the heap pinned full).
+  perVariableValue: 16, // a decimal value held by each global variable
+  perGlobalSlot: 10, // the globals table, with spare room
+  perCodeBlock: 40, // bookkeeping for the module and each function
+  perName: 4, // name-table overhead per name
+  // Temporary objects per run, roughly: measured ~80 bytes a run with 18 model registers.
+  garbageBase: 40,
+  garbagePerRegister: 4,
 };
 
 // Loads measured on the controller. Block counts only: the generated Python wasn't captured.
@@ -91,7 +105,7 @@ export function lineCost(line) {
   return { bytes, data, calls };
 }
 
-const FN_OVERHEAD = 40; // code object header, function object, name
+const FN_OVERHEAD = 8; // function prelude in the bytecode (the rest is counted as runtime bookkeeping)
 
 /**
  * Splits generated Python into module code and functions, and estimates each.
@@ -177,8 +191,14 @@ export function analyzePython(code) {
   }
 
   // Names held in the qstr pool and the globals dict.
-  const qstrBytes = [...declared].reduce((n, v) => n + v.length + 5 + 8, 0)
-    + out.filter((s) => s.kind === 'function').reduce((n, s) => n + s.name.length + 5 + 8, 0);
+  // Names the program brings: variables, functions and the library calls it uses.
+  const attrs = new Set();
+  for (const s of out) for (const b of s.body) for (const m of b.text.matchAll(/\.([A-Za-z_]\w*)\s*\(/g)) attrs.add(m[1]);
+  // Library call names (connmod.X, uniInputMapping.X) are already in the firmware: measured on a
+  // small sequence, counting them overshot by ~300 bytes. Only the sequence's own names cost heap.
+  const qstrBytes = [...declared].reduce((n, v) => n + v.length + 5, 0)
+    + out.filter((s) => s.kind === 'function').reduce((n, s) => n + s.name.length + 5, 0);
+  const nameCount = declared.size + out.filter((s) => s.kind === 'function').length;
 
   const functions = out.filter((s) => s.kind === 'function');
   const program = out.reduce((n, s) => n + s.bytes + s.data, 0) + qstrBytes;
@@ -191,6 +211,8 @@ export function analyzePython(code) {
     modelDefaults: configured,
     program,
     names: qstrBytes,
+    nameCount,
+    libNames: attrs,
     largest: largest ? { name: largest.name, bytes: largest.bytes } : null,
     loose,
     defOrder: functions.map((s) => s.name),
@@ -224,78 +246,74 @@ export function parseGcLine(text) {
   };
 }
 
-/**
- * Scale factor for the program estimate, from readings whose "max blk sz" shows the largest
- * function (over the firmware's own 800-byte block): measured bytes / estimated bytes.
- */
-export function scaleFrom(readings) {
-  const xs = readings
-    .filter((r) => r.gc?.maxBlk && r.gc.maxBlk * HEAP.gcBlock > HEAP.firmwareBlock + 32 && r.largestEst > 0)
-    .map((r) => (r.gc.maxBlk * HEAP.gcBlock) / r.largestEst);
-  if (!xs.length) return { k: 1, n: 0 };
-  const k = xs.reduce((a, b) => a + b, 0) / xs.length;
-  return { k: Math.min(2, Math.max(0.5, k)), n: xs.length };
-}
-
 // ------------------------------------------------------------------------------------ verdict
 
+/** Readings saved for this sequence (older readings without a sequence don't count). */
+export function readingsFor(readings, key) {
+  return key ? readings.filter((r) => r.sequence?.key === key) : [];
+}
+
 /**
- * est: { total, largest, blocks, fromPython }   total = bytes above the firmware baseline
- * readings: stored readings on this controller type, each { total, largest, blocks, outcome, gc }
- * Returns { level: 'fits'|'tight'|'too-large', confidence, reasons[], limit, tightFrom }.
+ * est: { total, largest, blocks, fromPython, exact, garbage }   total = bytes above the baseline
+ * own: readings saved for this same sequence.
+ * Returns { level, pct, basis, reasons[] (technical), plain[] (layman), measured }.
  */
-export function verdict(est, readings = []) {
+export function verdict(est, own = []) {
   const reasons = [];
-  const real = readings.filter((r) => r.outcome === 'ran' || r.outcome === 'failed');
-  const realBytes = real.filter((r) => typeof r.total === 'number');
-  const byBytes = est.fromPython && realBytes.some((r) => r.outcome === 'ran') && realBytes.some((r) => r.outcome === 'failed');
+  const plain = [];
+  const pct = est.total / HEAP.budget;
+  let level = pct >= HEAP.tooLargeFrom ? 'too-large' : pct >= HEAP.tightFrom ? 'tight' : 'fits';
+  const share = `${Math.round(pct * 100)}%`;
+  reasons.push(`Total: ${est.exact ? '' : 'about '}${fmtBytes(est.total)} of the ${fmtBytes(HEAP.budget)} the firmware leaves (${share}). Getting full from ${Math.round(HEAP.tightFrom * 100)}%, likely too large from ${Math.round(HEAP.tooLargeFrom * 100)}% (the boiler ran pinned at ~90% and failed at ~100%).`);
 
-  // With readings of both kinds on this controller, compare estimated bytes. Otherwise compare
-  // block counts against the measured loads (block count is a rough predictor).
-  // Stored readings hold unscaled estimates, so compare like with like.
-  const value = byBytes ? (est.totalRaw ?? est.total) : est.blocks;
-  const pts = byBytes
-    ? realBytes.map((r) => ({ v: r.total, outcome: r.outcome }))
-    : [...SEED_READINGS, ...real.filter((r) => r.blocks)].map((r) => ({ v: r.blocks, outcome: r.outcome }));
-  const unit = byBytes ? (n) => fmtBytes(n * (est.scale || 1)) : (n) => `${Math.round(n).toLocaleString('en-US')} blocks`;
-  const failed = pts.filter((p) => p.outcome === 'failed').map((p) => p.v);
-  const failMin = failed.length ? Math.min(...failed) : Infinity;
-  const ran = pts.filter((p) => p.outcome === 'ran' && p.v < failMin).map((p) => p.v);
-  const ranMax = ran.length ? Math.max(...ran) : 0;
-  const limit = Number.isFinite(failMin) ? (ranMax + failMin) / 2 : ranMax * 1.1;
-  const tightFrom = Math.min(ranMax, limit) * 0.9;
-  const basis = byBytes
-    ? `your ${realBytes.length} reading${realBytes.length > 1 ? 's' : ''} on this controller`
-    : 'measured lighting and boiler loads';
-
-  let level = 'fits';
-  if (value >= limit) {
-    level = 'too-large';
-    reasons.push(`Size: ${unit(value)}. Loads failed from ${unit(failMin)} and ran up to ${unit(ranMax)} (${basis}).`);
-  } else if (value >= tightFrom) {
-    level = 'tight';
-    reasons.push(`Size: ${unit(value)}, close to where loads failed (${unit(failMin)}; ran up to ${unit(ranMax)}, ${basis}).`);
-  } else {
-    reasons.push(`Size: ${unit(value)}. Loads ran up to ${unit(ranMax)} and failed from ${unit(failMin)} (${basis}).`);
-  }
-  if (est.fromPython && est.total > HEAP.budget) {
-    level = 'too-large';
-    reasons.push(`The estimate (${fmtBytes(est.total)}) is more than the ${fmtBytes(HEAP.budget)} the firmware leaves for a sequence.`);
-  }
-
+  // A function needs one unbroken piece of heap at load. Allow what this sequence itself has run with.
   if (est.largest) {
-    if (est.largest.bytes > HEAP.largestRan) {
+    const ranWith = Math.max(HEAP.largestRan, ...own.filter((r) => r.outcome === 'ran' && r.gc?.maxBlk).map((r) => r.gc.maxBlk * HEAP.gcBlock));
+    if (est.largest.bytes > ranWith * 1.05) {
       if (level === 'fits') level = 'tight';
-      reasons.push(`Largest function (${est.largest.name}): ${est.largest.exact ? '' : 'about '}${fmtBytes(est.largest.bytes)}, bigger than any function seen running (${fmtBytes(HEAP.largestRan)}). It needs one unbroken piece of heap when the program loads.`);
+      reasons.push(`Largest function ${est.largest.name}: ${est.largest.exact ? '' : 'about '}${fmtBytes(est.largest.bytes)}, bigger than any seen running (${fmtBytes(ranWith)}). It needs one unbroken piece of heap at load.`);
+      plain.push(`One part of the sequence (${est.largest.name}) is very large. Splitting it into smaller functions makes it easier for the controller to load.`);
     } else {
-      reasons.push(`Largest function (${est.largest.name}): ${est.largest.exact ? '' : 'about '}${fmtBytes(est.largest.bytes)}, within what has run (up to ${fmtBytes(HEAP.largestRan)}).`);
+      reasons.push(`Largest function ${est.largest.name}: ${est.largest.exact ? '' : 'about '}${fmtBytes(est.largest.bytes)}, within what has run (${fmtBytes(ranWith)}).`);
     }
   }
 
-  let confidence = 'low';
-  if (byBytes && realBytes.length >= 4) confidence = 'medium';
-  else if (byBytes) confidence = 'low to medium';
-  return { level, confidence, reasons, byBytes, limit, tightFrom, realReadings: real.length };
+  // Temporary data from each run fills the free space and has to be cleared.
+  if (est.garbage?.fillSeconds != null) {
+    const f = est.garbage.fillSeconds;
+    reasons.push(`Temporary data: about ${fmtBytes(est.garbage.perRun)} a run, every ${est.garbage.runRate} s, fills the ${fmtBytes(est.garbage.room)} left in about ${f < 120 ? `${Math.round(f)} s` : `${Math.round(f / 60)} min`} (rough). When it's full the controller clears it; the moments just before are when a memory error can happen.`);
+    if (f < 60 && level !== 'too-large') {
+      if (level === 'fits' && f < 20) level = 'tight';
+      plain.push(`It runs every ${est.garbage.runRate} s, so memory fills with temporary data about every ${Math.max(1, Math.round(f))} seconds and has to be cleared. Running it less often (for example every 5 to 10 s) lowers the chance of a memory error.`);
+    }
+  }
+
+  // What happened on the controller, for this sequence at this size.
+  const same = own.filter((r) => r.blocks === est.blocks);
+  const measured = same[0] || null;
+  if (measured) {
+    const used = measured.gc.used - HEAP.baseline;
+    reasons.push(`Measured on the controller (${measured.blocks} blocks): ${measured.outcome === 'ran' ? 'it ran' : 'it failed'}, lowest used ${measured.gc.used} (${fmtBytes(used)} above the baseline)${measured.gcSteady ? '; readings didn\'t move, so the heap was pinned full' : ''}.`);
+    if (measured.outcome === 'failed') level = 'too-large';
+    else {
+      // The controller's own lowest reading wins over the estimate when it's higher.
+      const mPct = used / HEAP.budget;
+      if (mPct > pct) {
+        const mLevel = mPct >= HEAP.tooLargeFrom ? 'too-large' : mPct >= HEAP.tightFrom ? 'tight' : 'fits';
+        const rank = { fits: 0, tight: 1, 'too-large': 2 };
+        if (rank[mLevel] > rank[level]) level = mLevel;
+      }
+      if (level === 'too-large') level = 'tight'; // it did run
+    }
+  }
+
+  let basis = est.exact ? 'the compiled program' : est.fromPython ? 'the generated code' : 'the number of blocks';
+  let shown = pct;
+  if (measured && measured.outcome === 'ran') {
+    const mPct = (measured.gc.used - HEAP.baseline) / HEAP.budget;
+    if (mPct > pct) { shown = mPct; basis = 'a reading from the controller'; }
+  }
+  return { level, pct: shown, share: `${Math.round(shown * 100)}%`, basis, reasons, plain, measured };
 }
 
 // -------------------------------------------------------------------------------- suggestions
@@ -348,6 +366,7 @@ export function suggestions(analysis) {
     out.push({
       kind: 'repeat',
       saving: r.saving,
+      plain: `The same ${r.w} steps are repeated ${r.at.length} times (in ${places}). Doing them once, in a loop or a shared function, frees about ${fmtBytes(r.saving)}.`,
       text: `${r.w} statements repeat ${r.at.length} times (in ${places}).${onlyNumbers ? ' They differ only in numbers, so a loop or a shared function with a number parameter can replace them.' : ' A shared function can replace them.'} Saves about ${fmtBytes(r.saving)}.`,
     });
   }
@@ -368,6 +387,7 @@ export function suggestions(analysis) {
     out.push({
       kind: 'single-read',
       saving: single.length * 30,
+      plain: `${single.length} model point${single.length > 1 ? 's are' : ' is'} copied into a variable but used only once. Using the point directly where it's needed saves memory.`,
       text: `${single.length} model point${single.length > 1 ? 's are' : ' is'} copied into a variable and read only once (${single.slice(0, 5).join(', ')}${single.length > 5 ? '…' : ''}). Read the point where it is used instead; each removed variable saves its name and its global slot.`,
     });
   }
@@ -385,6 +405,7 @@ export function suggestions(analysis) {
       out.push({
         kind: 'default',
         saving: n * 15,
+        plain: `${n} startup step${n > 1 ? 's set' : ' sets'} a model point to the value it already gets by default. ${n > 1 ? 'They' : 'It'} can be deleted.`,
         text: `${n} startup write${n > 1 ? 's set' : ' sets'} a model point to the value its model default already writes. Delete ${n > 1 ? 'them' : 'it'}; about 15 bytes each.`,
       });
     }
@@ -397,6 +418,7 @@ export function suggestions(analysis) {
     out.push({
       kind: 'loose',
       saving: analysis.loose.reduce((sum, t) => sum + lineCost(t).bytes, 0),
+      plain: `${n} block${n > 1 ? 's are' : ' is'} lying loose on the canvas, outside Startup and Continuous. ${n > 1 ? 'They' : 'It'} still take${n > 1 ? '' : 's'} memory: delete ${n > 1 ? 'them' : 'it'}.`,
       text: `${n} loose block${n > 1 ? 's' : ''} on the canvas, outside Startup, Continuous and functions (${shown}). ${n > 1 ? 'They still compile' : 'It still compiles'} into the program and ${n > 1 ? 'run' : 'runs'} once at load. Delete ${n > 1 ? 'them' : 'it'}.`,
     });
   }
@@ -406,6 +428,7 @@ export function suggestions(analysis) {
     out.push({
       kind: 'split',
       saving: 0,
+      plain: `${analysis.largest.name} is very large. Splitting it into two or three smaller functions makes it easier for the controller to load.`,
       text: `${analysis.largest.name} is about ${fmtBytes(analysis.largest.bytes)} on its own. A function this size needs one unbroken piece of heap at load; splitting it into two or three functions lowers that peak.`,
     });
   }
@@ -499,31 +522,54 @@ export function fmtBytes(n) {
  * Whole estimate. src: { python, blocks, stacks } from the page; readings: stored readings.
  * Without the generated Python it falls back to ~12 bytes per block (measured range 9 to 16).
  */
+/** Rough temporary data per run, and how soon it fills the room left. */
+function garbageFor(total, registers, runRate) {
+  if (!runRate) return null;
+  const perRun = HEAP.garbageBase + HEAP.garbagePerRegister * registers;
+  const room = Math.max(0, HEAP.budget - total);
+  return { perRun, runRate, room, fillSeconds: room / (perRun / runRate) };
+}
+
+/**
+ * Whole estimate. src: { python, blocks, sequence, runRate } from the page; readings: all stored
+ * readings (only this sequence's are used); mpy: a parsed build from the 75F compiler, if any.
+ */
 export function estimate(src, readings = [], mpy = null) {
   const blocks = src.blocks ?? 0;
+  const own = readingsFor(readings, src.sequence?.key);
   if (src.python) {
     const a = analyzePython(src.python);
-    const { k, n } = scaleFrom(readings);
     const model = a.modelPoints * HEAP.modelPerPoint;
-    let program = a.program * k;
-    let largest = a.largest ? { name: a.largest.name, bytes: a.largest.bytes * k, raw: a.largest.bytes } : null;
+    const codeBlocks = a.functions + 1;
+    const runtime = a.variables * HEAP.perVariableValue
+      + (a.variables + a.functions + 6) * HEAP.perGlobalSlot
+      + codeBlocks * HEAP.perCodeBlock;
+    let program;
+    let largest = a.largest ? { name: a.largest.name, bytes: a.largest.bytes } : null;
     let exact = null;
     if (mpy?.code != null) {
-      // Real compiled sizes: code per function, plus the names and function objects the
-      // estimate can't see in the file. The model's calls are inside runStartup's code, so
-      // take them out there and count the model at its measured cost.
+      // Real compiled sizes. The model's calls are inside runStartup's code; take them out there
+      // and count the model at its measured cost.
       const modelCode = a.modelPoints * 2 * 15;
-      const fnObjects = mpy.functions.length * 16;
-      program = Math.max(0, mpy.code - modelCode) + fnObjects + a.names + (mpy.consts?.bytes || 0) + (mpy.consts?.floats || 0) * 16;
+      const lib = new Set([...a.libNames, 'connmod', 'uniInputMapping', 'math', 'sys', 'types']);
+      const own = (mpy.names || []).filter((n, i) => !(i === 0 && /\.py$/.test(n)) && !lib.has(n));
+      const ownNames = own.reduce((n, x) => n + x.length + 5, 0);
+      program = Math.max(0, mpy.code - modelCode) + ownNames + own.length * HEAP.perName
+        + (mpy.consts?.bytes || 0) + (mpy.consts?.floats || 0) * 16;
       const big = mpy.functions.reduce((x, f) => (!x || f.bytes > x.bytes ? f : x), null);
       largest = big ? { name: big.name, bytes: big.bytes, exact: true } : largest;
       exact = mpy;
+    } else {
+      program = a.program + a.nameCount * HEAP.perName;
     }
-    const est = { total: model + program, totalRaw: model + (exact ? program : a.program), model, program, largest, blocks,
-      fromPython: true, scale: exact ? 1 : k, scaleReadings: exact ? 0 : n, exact };
-    return { est, analysis: a, verdict: verdict(est, readings), suggestions: suggestions(a) };
+    const total = model + program + runtime;
+    const est = { total, model, program, runtime, largest, blocks, fromPython: true, exact,
+      garbage: garbageFor(total, a.modelPoints, src.runRate) };
+    return { est, analysis: a, own, verdict: verdict(est, own), suggestions: suggestions(a) };
   }
-  const total = blocks * 12;
-  const est = { total, model: null, program: total, largest: null, blocks, fromPython: false, scale: 1, scaleReadings: 0, exact: null };
-  return { est, analysis: null, verdict: verdict(est, readings), suggestions: [] };
+  // No code: about 11 bytes a block (measured 9 to 14 across the sequences tested).
+  const total = blocks * 11;
+  const est = { total, model: null, program: total, runtime: 0, largest: null, blocks, fromPython: false, exact: null,
+    garbage: garbageFor(total, 0, src.runRate) };
+  return { est, analysis: null, own, verdict: verdict(est, own), suggestions: [] };
 }
