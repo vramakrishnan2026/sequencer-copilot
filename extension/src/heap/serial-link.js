@@ -70,11 +70,17 @@ export function createSerialLink({ onText, onStatus }) {
     supported,
     get connected() { return !!port; },
     get baud() { return baud; },
-    /** Asks the person to pick the port (needs a click), then opens it. */
-    async connect(rate) {
+    /**
+     * Opens a port the extension may use (granted in the connect tab). Prefers the one picked
+     * last. Returns false when no port has been granted yet.
+     */
+    async connect(rate, preferred = null) {
       if (!supported()) throw new Error('This browser can\'t open USB serial ports. Use Chrome or Edge on a desktop computer.');
       baud = Number(rate) || 115200;
-      const p = await navigator.serial.requestPort();
+      const ports = await navigator.serial.getPorts();
+      if (!ports.length) return false;
+      const same = (p, want) => want && p.getInfo().usbVendorId === want.usbVendorId && p.getInfo().usbProductId === want.usbProductId;
+      const p = ports.find((x) => same(x, preferred)) || ports[ports.length - 1];
       info = p.getInfo();
       wanted = true;
       try {
@@ -85,6 +91,7 @@ export function createSerialLink({ onText, onStatus }) {
           ? 'That port is in use. Close Tera Term (or any other program reading the controller), then try again.'
           : err.message);
       }
+      return true;
     },
     async disconnect() {
       wanted = false;

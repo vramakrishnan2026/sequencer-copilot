@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Connect controller · 75F Sequencer Copilot</title>
+  <link rel="stylesheet" href="../sidepanel/sidepanel.css">
+  <style>
+    body { max-width: 520px; margin: 48px auto; padding: 0 16px; }
+    .card p { margin: 0; line-height: 1.55; }
+    .card h1 { font-size: 18px; margin: 0; }
+  </style>
+</head>
+<body>
+  <section class="card">
+    <h1>Connect the controller</h1>
+    <p>Chrome only lets you pick a USB port from a tab like this one. Pick the controller once (for example <strong>USB Serial Device (COM26)</strong>) and the Memory check in the side panel takes over from there.</p>
+    <p>Close Tera Term first if it's using the port.</p>
+    <div><button id="pick" class="primary" type="button">Choose the controller</button></div>
+    <p id="msg" class="hint" role="status"></p>
+  </section>
+  <script type="module" src="connect.js"></script>
+</body>
+</html>

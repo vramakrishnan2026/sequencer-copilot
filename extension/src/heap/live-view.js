@@ -96,6 +96,36 @@ export function createLiveView(root, { canvas = () => null } = {}) {
   }
   setInterval(() => { if (dirty) store(reader.session); }, 15000);
 
+  // ------------------------------------------------------------------------------ connecting
+  // Chrome won't show the port picker in the side panel, so ports are picked in a tab once.
+  let picking = false;
+  let speed = 115200; // only matters for a USB-to-serial adapter
+  function openPicker() {
+    picking = true;
+    error = '';
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/heap/connect.html') });
+    render();
+  }
+  async function connect(rate) {
+    error = '';
+    try {
+      const { heapSerialPort } = await chrome.storage.local.get('heapSerialPort');
+      const ok = await link.connect(rate, heapSerialPort?.info ?? null);
+      if (!ok) { openPicker(); return; }
+      picking = false;
+    } catch (err) {
+      error = err.message;
+    }
+    render();
+  }
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.heapSerialPort?.newValue && !link.connected) {
+      picking = false;
+      if (link.connected) return;
+      link.disconnect().then(() => connect(speed));
+    }
+  });
+
   // ------------------------------------------------------------------------------- rendering
   let timer = null;
   function schedule() {
@@ -167,15 +197,10 @@ export function createLiveView(root, { canvas = () => null } = {}) {
 
     // A controller on native USB ("USB Serial Device") ignores the speed; only a USB-to-serial
     // adapter needs it, so it's tucked away.
-    const baud = el('select', { 'aria-label': 'Port speed (baud rate)' },
-      BAUDS.map((b) => el('option', { value: String(b), selected: b === status.baud || null }, `${b.toLocaleString()} baud`)));
-    const connectBtn = el('button', { type: 'button', class: 'primary', disabled: !supported || null, onclick: async () => {
-      error = '';
-      try { await link.connect(baud.value); } catch (err) {
-        if (err.name !== 'NotFoundError') error = err.message; // NotFoundError: the person closed the picker
-      }
-      render();
-    } }, 'Connect controller');
+    const baud = el('select', { 'aria-label': 'Port speed (baud rate)', onchange: (e) => { speed = Number(e.target.value); } },
+      BAUDS.map((b) => el('option', { value: String(b), selected: b === speed || null }, `${b.toLocaleString()} baud`)));
+    const connectBtn = el('button', { type: 'button', class: 'primary', disabled: !supported || null, onclick: () => connect(speed) }, 'Connect controller');
+    const otherPort = el('button', { type: 'button', class: 'link', onclick: openPicker }, 'Pick a different port');
     const disconnectBtn = el('button', { type: 'button', onclick: async () => { await link.disconnect(); render(); } }, 'Disconnect');
 
     const head = el('div', { class: 'live-head' },
@@ -188,7 +213,8 @@ export function createLiveView(root, { canvas = () => null } = {}) {
       parts.push(el('p', { class: 'hint' }, supported
         ? 'Plug the controller into this computer by USB to watch its memory live: the reading after start-up and every run after it. Keep this panel open while it records. Close Tera Term or any other program using the port first, then pick the controller (for example "USB Serial Device (COM26)").'
         : 'This browser can\'t open USB serial ports. Use Chrome or Edge on a desktop computer.'));
-      parts.push(el('div', { class: 'live-row' }, connectBtn));
+      parts.push(el('div', { class: 'live-row' }, connectBtn, picking ? null : otherPort));
+      if (picking) parts.push(el('p', { class: 'hint ok' }, 'A tab has opened: press "Choose the controller" there and pick it (for example "USB Serial Device (COM26)"). This card connects as soon as you do.'));
       parts.push(el('details', { class: 'live-earlier' },
         el('summary', {}, 'Using a USB-to-serial adapter instead?'),
         el('p', { class: 'hint' }, 'Pick the speed the adapter uses. A controller plugged in directly ignores this.'),
