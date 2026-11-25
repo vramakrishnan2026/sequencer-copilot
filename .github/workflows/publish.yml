@@ -53,7 +53,7 @@ jobs:
           for f in $(find extension -name '*.js' -not -path '*/lib/*'); do node --check "$f"; done
 
       - name: Unit tests
-        run: node --test tests/
+        run: node --test tests/*.test.mjs
 
       - name: Build zip (manifest at the zip root)
         run: |
