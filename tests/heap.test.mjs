@@ -45,11 +45,14 @@ test("a sequence's own reading wins: failed means too big; a reading's numbers r
   const key = { key: '/seq/x' };
   const failed = [{ sequence: key, outcome: 'failed', blocks: 500, gc: { used: 6000, maxFree: 300 } }];
   assert.equal(estimate({ python: null, mpySize: 2000, blocks: 500, sequence: key }, failed).verdict.level, 'too-large');
-  const ran = [{ sequence: key, outcome: 'ran', blocks: 942, gc: { used: 8704, maxFree: 156 } }];
+  const ran = [{ sequence: key, phase: 2, outcome: 'ran', blocks: 942, startup: { used: 8704, maxFree: 156 }, runs: [{ used: 11072 }], trend: 'steady' }];
   const r = estimate({ python: null, mpySize: 3000, blocks: 942, sequence: key }, ran);
   assert.equal(r.verdict.trueSize, 6064);
   assert.equal(r.verdict.level, 'tight');
   assert.equal(r.verdict.basis, 'a reading from the controller');
+  // An old-style reading (phase unknown, e.g. taken mid-run) never sets the true size.
+  const old = [{ sequence: key, outcome: 'ran', blocks: 942, gc: { used: 11456, maxFree: 17 } }];
+  assert.notEqual(estimate({ python: null, mpySize: 3000, blocks: 942, sequence: key }, old).verdict.basis, 'a reading from the controller');
 });
 
 test('predicted .mpy size is within 3% of mpy-cross 1.22 on a real 75F program', async () => {
@@ -105,4 +108,25 @@ GC: total: 11968, used: 4672, free: 7296
   assert.equal(r.low.used, 4672);
   assert.equal(r.high.used, 11488);
   assert.equal(r.steady, false);
+});
+
+test('reads a controller log: start-up reading vs run peaks, and whether memory builds up', async () => {
+  const { parseGcLog } = await import('../extension/src/heap/estimate.js');
+  const fs = await import('node:fs');
+  const r = parseGcLog(fs.readFileSync(new URL('./fixtures/boiler-rebuild.log', import.meta.url), 'utf8'));
+  assert.equal(r.startup.used, 7440);
+  assert.equal(r.startup.maxFree, 254);
+  assert.deepEqual(r.runs.map((x) => x.used), [11456, 11456]);
+  assert.equal(r.trend, 'steady');
+  // A lone reading from the middle of a run is not the true size.
+  const lone = parseGcLog('GC: total: 11968, used: 11456, free: 512\n No. of 1-blocks: 239, 2-blocks: 7, max blk sz: 120, max free sz: 17');
+  assert.equal(lone.startup, null);
+});
+
+test('flags code that makes memory build up every run, and nothing else', async () => {
+  const { analyzePython } = await import('../extension/src/heap/estimate.js');
+  const base = 'import connmod\n\nLog = None\nT = None\n\ndef runStartup():\n  global Log, T\n  Log = []\n\ndef runContinuous():\n  global Log, T\n';
+  assert.deepEqual(analyzePython(base + '  T = connmod.GetUniversalInputValue(0) * 2\n').grows, []);
+  assert.deepEqual(analyzePython(base + '  Log.append(T)\n').grows, ['Log']);
+  assert.deepEqual(analyzePython(base.replace('Log = []', "Log = ''") + "  Log = str(Log) + str(T)\n").grows, ['Log']);
 });

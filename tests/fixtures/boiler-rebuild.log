@@ -1,0 +1,585 @@
+-------------------------------
+75F Connect-Module(v6.1)
+Built Sep  4 2026 16:45:43
+Main: B: main, C: a3ebfd89, D: 0
+Common: B: main, C: 4eed3a37, D: 0
+App: B: main, C: 754c579c, D: 0
+IDE: v2.0.0
+CubeMX: v6.13.0
+FW_WB: v1.16.0
+-------------------------------
+BOR_LEVEL 2048
+TaskInterface_initTasks 6
+-------------GET DEFAULT APP SETTINGS---------------
+Success initialize NVM Manager
+Comm Settings: Connect Module Mode: 1, Modbus Address: 5, Baud Rate: 0, Parity: 0, Stop Bits: 0
+lwMeshPairingAddress: 65535
+ACTIVE SEQUENCE METADATA
+Name: Boiler from Scratch
+Length: 4338
+Signature: 7D 17 E3 70 98 EB 69 62 B4 09 4E 99 D3 31 B0 53 D7 D8 5C 52 4F 3F D4 B1 5B 59 BA A7 F0 24 D5 E0
+UPDATE SEQUENCE METADATA
+Name: ��������������������������������������������
+Length: -1
+Signature: FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF
+Update sequence is invalid. Attempting to execute active sequence.
+Validate sequence metadata is valid. Attempting to validate sequence signature.
+  Public Bluetooth Address: 00:80:e1:27:5e:93
+
+Sequence Calculated Signature:  7D 17 E3 70 98 EB 69 62 B4 09 4E 99 D3 31 B0 53 D7 D8 5C 52 4F 3F D4 B1 5B 59 BA A7 F0 24 D5 E0
+Sequence Metadata Signature:    7D 17 E3 70 98 EB 69 62 B4 09 4E 99 D3 31 B0 53 D7 D8 5C 52 4F 3F D4 B1 5B 59 BA A7 F0 24 D5 E0
+Update sequence is valid.
+Sequence Boiler from Scratch is valid
+MICROPYTHON MNGR: Module Loaded..
+MICROPYTHON MNGR: Module Details Type:2, Ptr:0x80b6000, Length:4338
+AppManager_InitState:Event:0
+AppManager_NormalState:Event:0
+AppManager_normalStateEnter Entering Normal State!
+Normal State: NODE_STATUS_REBOOT
+nodeStatusOverModbus: 1
+AppManager_enableFailSafe: Fail-Safe Enabled:0
+InterfaceManager_initialize MODBUS port:1 addr:5 baud:0 parity:0 stop:0 registerAddrOffset:60000
+Rs485Driver_StPort_initialize PortId:1 Baud:0 Parity:0 StopBits:0
+RS485 Port[1] HAL_UARTEx_ReceiveToIdle_DMA Status:0
+==>> aci_gap_set_discoverable - Success
+
+
+HW OUTPUT: RELAY1: 0
+HW OUTPUT: RELAY2: 0
+HW OUTPUT: RELAY3: 0
+HW OUTPUT: RELAY4: 0
+HW OUTPUT: RELAY5: 0
+HW OUTPUT: RELAY6: 0
+HW OUTPUT: RELAY7: 0
+HW OUTPUT: RELAY8: 0
+HW OUTPUT: ANA1 value: 0000
+HW OUTPUT: ANA2 value: 0000
+HW OUTPUT: ANA3 value: 0000
+HW OUTPUT: ANA4 value: 0000
+Still Alive 0
+MICROPYTHON MNGR: Service..
+MICROPYTHON MNGR:  Enter Sequence..
+Configuring register: register_type:1 config:40000 dataType:1
+Successfully configured register_type:1 with config:40000
+Configuring second float register: register_type:1 config:40001
+Successfully configured second register_type:1 with config:40001
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40000 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40001 value:0
+Configuring register: register_type:1 config:40002 dataType:1
+Successfully configured register_type:1 with config:40002
+Configuring second float register: register_type:1 config:40003
+Successfully configured second register_type:1 with config:40003
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40002 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40003 value:0
+Configuring register: register_type:1 config:40004 dataType:1
+Successfully configured register_type:1 with config:40004
+Configuring second float register: register_type:1 config:40005
+Successfully configured second register_type:1 with config:40005
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40004 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40005 value:0
+Configuring register: register_type:1 config:40006 dataType:1
+Successfully configured register_type:1 with config:40006
+Configuring second float register: register_type:1 config:40007
+Successfully configured second register_type:1 with config:40007
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40006 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40007 value:0
+Configuring register: register_type:1 config:40008 dataType:1
+Successfully configured register_type:1 with config:40008
+Configuring second float register: register_type:1 config:40009
+Successfully configured second register_type:1 with config:40009
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40008 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40009 value:0
+Configuring register: register_type:1 config:40010 dataType:1
+Successfully configured register_type:1 with config:40010
+Configuring second float register: register_type:1 config:40011
+Successfully configured second register_type:1 with config:40011
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40010 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40011 value:0
+Configuring register: register_type:1 config:40012 dataType:1
+Successfully configured register_type:1 with config:40012
+Configuring second float register: register_type:1 config:40013
+Successfully configured second register_type:1 with config:40013
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40012 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40013 value:0
+Configuring register: register_type:1 config:40014 dataType:1
+Successfully configured register_type:1 with config:40014
+Configuring second float register: register_type:1 config:40015
+Successfully configured second register_type:1 with config:40015
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40014 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40015 value:0
+Configuring register: register_type:1 config:40016 dataType:1
+Successfully configured register_type:1 with config:40016
+Configuring second float register: register_type:1 config:40017
+Successfully configured second register_type:1 with config:40017
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40016 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40017 value:0
+Configuring register: register_type:1 config:40018 dataType:1
+Successfully configured second register_type:1 with config:40019
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40018 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40019 value:0
+Configuring register: register_type:1 config:40020 dataType:1
+Successfully configured register_type:1 with config:40020
+Configuring second float register: register_type:1 config:40021
+Successfully configured second register_type:1 with config:40021
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40020 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40021 value:0
+Configuring register: register_type:1 config:40022 dataType:1
+Successfully configured register_type:1 with config:40022
+Configuring second float register: register_type:1 config:40023
+Successfully configured second register_type:1 with config:40023
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40022 value:0
+Successfully configured register_type:1 with config:40024
+Configuring second float register: register_type:1 config:40025
+Successfully configured second register_type:1 with config:40025
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40024 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40025 value:0
+Configuring register: register_type:1 config:40026 dataType:1
+Successfully configured register_type:1 with config:40026
+Configuring second float register: register_type:1 config:40027
+Successfully configured second register_type:1 with config:40027
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40026 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40027 value:0
+Configuring register: register_type:1 config:40028 dataType:1
+Successfully configured register_type:1 with config:40028
+Configuring second float register: register_type:1 config:40029
+Successfully configured second register_type:1 with config:40029
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40028 value:0
+Configuring register: register_type:1 config:40036 dataType:1
+Successfully configured register_type:1 with config:40036
+Configuring second float register: register_type:1 config:40037
+Successfully configured second register_type:1 with config:40037
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40036 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40037 value:0
+Configuring register: register_type:1 config:40038 dataType:1
+Successfully configured register_type:1 with config:40038
+Configuring second float register: register_type:1 config:40039
+Successfully configured second register_type:1 with config:40039
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40038 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40039 value:0
+Configuring register: register_type:1 config:40040 dataType:1
+Successfully configured register_type:1 with config:40040
+Configuring second float register: register_type:1 config:40041
+Successfully configured second register_type:1 with config:40041
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40040 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40041 value:0
+Configuring register: register_type:1 config:40042 dataType:1
+Successfully configured register_type:1 with config:40042
+Configuring second float register: register_type:1 config:40043
+Successfully configured second register_type:1 with config:40043
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40042 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40043 value:0
+Configuring register: register_type:1 config:40044 dataType:1
+Successfully configured register_type:1 with config:40044
+Configuring second float register: register_type:1 config:40045
+Successfully configured second register_type:1 with config:40045
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40044 value:16256
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40045 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40046 value:16752
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40047 value:0
+Configuring register: register_type:1 config:40048 dataType:1
+Successfully configured register_type:1 with config:40048
+Configuring second float register: register_type:1 config:40049
+Successfully configured second register_type:1 with config:40049
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40048 value:17036
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40049 value:0
+Configuring register: register_type:1 config:40050 dataType:1
+Successfully configured register_type:1 with config:40050
+Configuring second float register: register_type:1 config:40051
+Successfully configured second register_type:1 with config:40051
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40050 value:17066
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40051 value:0
+Configuring register: register_type:1 config:40052 dataType:1
+Successfully configured register_type:1 with config:40052
+Configuring second float register: register_type:1 config:40053
+Successfully configured second register_type:1 with config:40053
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40052 value:16448
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40053 value:0
+Configuring register: register_type:1 config:40054 dataType:1
+Successfully configured register_type:1 with config:40054
+Configuring second float register: register_type:1 config:40055
+Successfully configured second register_type:1 with config:40055
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40054 value:16448
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40055 value:0
+Configuring register: register_type:1 config:40056 dataType:1
+Successfully configured register_type:1 with config:40056
+Configuring second float register: register_type:1 config:40057
+Successfully configured second register_type:1 with config:40057
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40063 value:0
+MICROPYTHON MNGR:  Exit Sequence..
+MICROPYTHON MNGR:  Sequence Time(ms):23.748609
+stack: 432 out of 10240
+                       GC: total: 11968, used: 7440, free: 4528
+                                                                No. of 1-blocks: 38, 2-blocks: 7, max blk sz: 120, max free sz: 254
+                                                                                                                                   connmod delay 10000 milliseconds..
+Still Alive 1
+Still Alive 2
+ScreenManager Target:1 Event:0
+GlobalScreen_eventHandler Event:0
+GlobalScreen_enter
+ScreenManager Target:1 Event:1
+GlobalScreen_eventHandler Event:1
+ScreenManager Target:3 Event:0
+HomeLcScreen_eventHandler Event:0
+HomeLcScreen_enter
+ScreenInActivityTimer stopped
+Still Alive 3
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+HW INPUT MNGR: ADC VREF: 3289mV GREF:0 Counts
+HW INPUT MNGR: Universal Input 1 Mode:1 Raw:0451 Value:552
+HW INPUT MNGR: Universal Input 2 Mode:1 Raw:0609 Value:931
+HW INPUT MNGR: Universal Input 3 Mode:0 Raw:0211 Value:544
+HW INPUT MNGR: Universal Input 4 Mode:0 Raw:0686 Value:1766
+HW INPUT MNGR: Universal Input 5 Mode:1 Raw:0601 Value:909
+HW INPUT MNGR: Universal Input 6 Mode:0 Raw:0997 Value:2570
+HW INPUT MNGR: Universal Input 7 Mode:1 Raw:0814 Value:1841
+HW INPUT MNGR: Universal Input 8 Mode:1 Raw:0741 Value:1436
+Still Alive 4
+HW OUTPUT: ANA1 value: 0000
+HW OUTPUT: ANA2 value: 0000
+HW OUTPUT: ANA3 value: 0000
+HW OUTPUT: ANA4 value: 0000
+HW OUTPUT: RELAY1: 0
+HW OUTPUT: RELAY2: 0
+HW OUTPUT: RELAY3: 0
+HW OUTPUT: RELAY4: 0
+HW OUTPUT: RELAY5: 0
+HW OUTPUT: RELAY6: 0
+HW OUTPUT: RELAY7: 0
+HW OUTPUT: RELAY8: 0
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 5
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 6
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 7
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 8
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 9
+Task count = 13
+No  Name                     S  Usage   HW
+0   Health Mngr              0   0.0000  423
+1   IDLE                     1  81.1326  115
+2   Disp Mngr                2  12.5460  536
+3   LC Update Mngr           2   0.0484  487
+4   HwIn Mngr                2   5.3146  422
+5   Mpy Mngr                 2   0.3679  497
+6   Tmr Svc                  2   0.3582  139
+7   App Mngr                 2   0.1258  126
+8   ADV_UPDATE_PROC          3   0.0000  599
+9   Intf Mngr                2   0.0000  389
+10  SHCI_USER_EVT_P          3   0.0581  461
+11  HwOut Mngr               2   0.0194  398
+12  HCI_USER_EVT_PR          3   0.0000 1239
+HW INPUT MNGR: ADC VREF: 3289mV GREF:0 Counts
+HW INPUT MNGR: Universal Input 1 Mode:1 Raw:0451 Value:552
+HW INPUT MNGR: Universal Input 2 Mode:1 Raw:0609 Value:931
+HW INPUT MNGR: Universal Input 3 Mode:0 Raw:0211 Value:544
+HW INPUT MNGR: Universal Input 4 Mode:0 Raw:0686 Value:1766
+HW INPUT MNGR: Universal Input 5 Mode:1 Raw:0601 Value:909
+HW INPUT MNGR: Universal Input 6 Mode:0 Raw:0997 Value:2570
+HW INPUT MNGR: Universal Input 7 Mode:1 Raw:0814 Value:1841
+HW INPUT MNGR: Universal Input 8 Mode:1 Raw:0742 Value:1436
+HW OUTPUT: ANA1 value: 0000
+HW OUTPUT: ANA2 value: 0000
+HW OUTPUT: ANA3 value: 0000
+HW OUTPUT: ANA4 value: 0000
+HW OUTPUT: RELAY1: 0
+HW OUTPUT: RELAY2: 0
+HW OUTPUT: RELAY3: 0
+HW OUTPUT: RELAY4: 0
+HW OUTPUT: RELAY5: 0
+HW OUTPUT: RELAY6: 0
+HW OUTPUT: RELAY7: 0
+HW OUTPUT: RELAY8: 0
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+MICROPYTHON MNGR:  Enter Sequence..
+Still Alive 10
+ConnModInt_readModbusRegister registerType:1 registerAddress:40046
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40046, Value:16752
+ConnModInt_readModbusRegister registerType:1 registerAddress:40047
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40047, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40048
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40048, Value:17036
+ConnModInt_readModbusRegister registerType:1 registerAddress:40049
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40049, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40024
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40024, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40025
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40025, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40030
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40030, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40031
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40031, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40026
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40026, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40027
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40027, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40028
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40028, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40029
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40029, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40062
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40062, Value:16880
+ConnModInt_readModbusRegister registerType:1 registerAddress:40063
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40063, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40044
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40044, Value:16256
+ConnModInt_readModbusRegister registerType:1 registerAddress:40045
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40045, Value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40020 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40021 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40016 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40017 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40022 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40023 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40018 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40019 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40000 value:16848
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40001 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40002 value:16857
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40003 value:60293
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40004 value:16925
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40005 value:15729
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40006 value:16853
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40007 value:28836
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40008 value:16267
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40009 value:34079
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40010 value:16481
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40011 value:60293
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40012 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40013 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40014 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40015 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40032 value:16256
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40033 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40034 value:16256
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40035 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40036 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40037 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40038 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40039 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40040 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40041 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40042 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40043 value:0
+MICROPYTHON MNGR:  Exit Sequence..
+MICROPYTHON MNGR:  Sequence Time(ms):234.808969
+stack: 432 out of 10240
+                       GC: total: 11968, used: 11456, free: 512
+                                                                No. of 1-blocks: 239, 2-blocks: 7, max blk sz: 120, max free sz: 30
+                                                                                                                                   connmod delay 10000 milliseconds..
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 11
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 12
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 13
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 14
+HW OUTPUT: ANA1 value: 0000
+HW OUTPUT: ANA2 value: 0000
+HW OUTPUT: ANA3 value: 0000
+HW OUTPUT: ANA4 value: 0000
+HW OUTPUT: RELAY1: 0
+HW OUTPUT: RELAY2: 0
+HW OUTPUT: RELAY3: 0
+HW OUTPUT: RELAY4: 0
+HW OUTPUT: RELAY5: 0
+HW OUTPUT: RELAY6: 0
+HW OUTPUT: RELAY7: 0
+HW OUTPUT: RELAY8: 0
+HW INPUT MNGR: ADC VREF: 3289mV GREF:0 Counts
+HW INPUT MNGR: Universal Input 1 Mode:1 Raw:0451 Value:552
+HW INPUT MNGR: Universal Input 2 Mode:1 Raw:0609 Value:931
+HW INPUT MNGR: Universal Input 3 Mode:0 Raw:0211 Value:544
+HW INPUT MNGR: Universal Input 4 Mode:0 Raw:0686 Value:1766
+HW INPUT MNGR: Universal Input 5 Mode:1 Raw:0601 Value:909
+HW INPUT MNGR: Universal Input 6 Mode:0 Raw:0997 Value:2570
+HW INPUT MNGR: Universal Input 7 Mode:1 Raw:0814 Value:1841
+HW INPUT MNGR: Universal Input 8 Mode:1 Raw:0741 Value:1436
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 15
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 16
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 17
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 18
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 19
+Task count = 13
+No  Name                     S  Usage   HW
+0   Health Mngr              0   0.0295  347
+1   IDLE                     1  81.1234  115
+2   Tmr Svc                  2   0.3836  139
+3   LC Update Mngr           2   0.0689  487
+4   HwIn Mngr                2   5.7299  415
+5   Mpy Mngr                 2   1.3476  497
+6   Disp Mngr                2  11.1893  536
+7   ADV_UPDATE_PROC          3   0.0000  599
+8   Intf Mngr                2   0.0000  389
+9   SHCI_USER_EVT_P          3   0.0295  461
+10  HwOut Mngr               2   0.0197  398
+11  HCI_USER_EVT_PR          3   0.0000 1239
+12  App Mngr                 2   0.0639  126
+HW OUTPUT: ANA1 value: 0000
+HW OUTPUT: ANA2 value: 0000
+HW OUTPUT: ANA3 value: 0000
+HW OUTPUT: ANA4 value: 0000
+HW OUTPUT: RELAY1: 0
+HW OUTPUT: RELAY2: 0
+HW OUTPUT: RELAY3: 0
+HW OUTPUT: RELAY4: 0
+HW OUTPUT: RELAY5: 0
+HW OUTPUT: RELAY6: 0
+HW OUTPUT: RELAY7: 0
+HW OUTPUT: RELAY8: 0
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+HW INPUT MNGR: ADC VREF: 3289mV GREF:0 Counts
+HW INPUT MNGR: Universal Input 1 Mode:1 Raw:0451 Value:552
+HW INPUT MNGR: Universal Input 2 Mode:1 Raw:0609 Value:931
+HW INPUT MNGR: Universal Input 3 Mode:0 Raw:0211 Value:544
+HW INPUT MNGR: Universal Input 4 Mode:0 Raw:0686 Value:1766
+HW INPUT MNGR: Universal Input 5 Mode:1 Raw:0601 Value:909
+HW INPUT MNGR: Universal Input 6 Mode:0 Raw:0997 Value:2570
+HW INPUT MNGR: Universal Input 7 Mode:1 Raw:0814 Value:1841
+HW INPUT MNGR: Universal Input 8 Mode:1 Raw:0742 Value:1436
+Still Alive 20
+MICROPYTHON MNGR:  Enter Sequence..
+ConnModInt_readModbusRegister registerType:1 registerAddress:40046
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40046, Value:16752
+ConnModInt_readModbusRegister registerType:1 registerAddress:40047
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40047, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40048
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40048, Value:17036
+ConnModInt_readModbusRegister registerType:1 registerAddress:40049
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40049, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40024
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40024, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40025
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40025, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40030
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40030, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40031
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40031, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40026
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40026, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40027
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40027, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40028
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40028, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40029
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40029, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40062
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40062, Value:16880
+ConnModInt_readModbusRegister registerType:1 registerAddress:40063
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40063, Value:0
+ConnModInt_readModbusRegister registerType:1 registerAddress:40044
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40044, Value:16256
+ConnModInt_readModbusRegister registerType:1 registerAddress:40045
+ModbusServerCustom_readRegister: Read Register Type:1, Address:40045, Value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40020 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40021 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40016 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40017 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40022 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40023 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40018 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40019 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40000 value:16848
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40001 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40002 value:16857
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40003 value:60293
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40004 value:16925
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40005 value:15729
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40006 value:16853
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40007 value:28836
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40008 value:16267
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40009 value:34079
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40010 value:16481
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40011 value:60293
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40012 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40013 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40014 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40015 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40032 value:16256
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40033 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40034 value:16256
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40035 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40036 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40037 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40038 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40039 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40040 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40041 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40042 value:0
+ConnModInt_writeModbusRegister registerType:1 registerAddress:40043 value:0
+MICROPYTHON MNGR:  Exit Sequence..
+MICROPYTHON MNGR:  Sequence Time(ms):236.092281
+stack: 432 out of 10240
+                       GC: total: 11968, used: 11456, free: 512
+                                                                No. of 1-blocks: 239, 2-blocks: 7, max blk sz: 120, max free sz: 17
+                                                                                                                                   connmod delay 10000 milliseconds..
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 21
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 22
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 23
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 24
+HW OUTPUT: ANA1 value: 0000
+HW OUTPUT: ANA2 value: 0000
+HW OUTPUT: ANA3 value: 0000
+HW OUTPUT: ANA4 value: 0000
+HW OUTPUT: RELAY1: 0
+HW OUTPUT: RELAY2: 0
+HW OUTPUT: RELAY3: 0
+HW OUTPUT: RELAY4: 0
+HW OUTPUT: RELAY5: 0
+HW OUTPUT: RELAY6: 0
+HW OUTPUT: RELAY7: 0
+HW OUTPUT: RELAY8: 0
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 25
+HW INPUT MNGR: ADC VREF: 3289mV GREF:0 Counts
+HW INPUT MNGR: Universal Input 1 Mode:1 Raw:0451 Value:552
+HW INPUT MNGR: Universal Input 2 Mode:1 Raw:0609 Value:931
+HW INPUT MNGR: Universal Input 3 Mode:0 Raw:0211 Value:544
+HW INPUT MNGR: Universal Input 4 Mode:0 Raw:0686 Value:1766
+HW INPUT MNGR: Universal Input 5 Mode:1 Raw:0601 Value:909
+HW INPUT MNGR: Universal Input 6 Mode:0 Raw:0997 Value:2570
+HW INPUT MNGR: Universal Input 7 Mode:1 Raw:0814 Value:1841
+HW INPUT MNGR: Universal Input 8 Mode:1 Raw:0742 Value:1436
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 26
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 27
+ScreenManager_service ScreenId:3 Event:2
+HomeLcScreen_eventHandler Event:2
+Still Alive 28

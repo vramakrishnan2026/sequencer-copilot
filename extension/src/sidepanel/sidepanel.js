@@ -9,7 +9,7 @@ const { id: windowId } = await chrome.windows.getCurrent();
 const VERSION = chrome.runtime.getManifest().version;
 
 // Kept between sessions. mode: 'new' | 'edit'; assistant: 'chatgpt' | 'antigravity' | 'claude' | 'copilot' | 'other'.
-const DEFAULTS = { mode: 'new', assistant: 'chatgpt', showTypes: true, setupDone: false, lastDownload: null };
+const DEFAULTS = { mode: 'new', assistant: 'chatgpt', showTypes: true, setupDone: false, lastDownload: null, heapReadingsOn: false };
 const settings = { ...DEFAULTS, ...((await chrome.storage.local.get('settings')).settings || {}) };
 const saveSettings = (patch) => { Object.assign(settings, patch); return chrome.storage.local.set({ settings }); };
 
@@ -277,6 +277,7 @@ $('openHeap').addEventListener('click', async () => {
     heap = createHeapView($('heapRoot'), {
       loadSource: () => bg('heapSource'),
       build: (python) => bg('mpyBuild', { python }),
+      readingsOn: () => settings.heapReadingsOn,
       onError: (err) => {
         $('heapSub').textContent = /Unknown method/.test(err.message)
           ? 'Reload the Sequencer tab once so the update reaches it, then try again.'
@@ -645,6 +646,7 @@ async function renderSettings() {
   document.querySelectorAll('input[name=assistant]').forEach((r) => { r.checked = r.value === settings.assistant; });
   renderSetupSteps();
   $('showTypes').checked = settings.showTypes;
+  $('heapReadingsOn').checked = settings.heapReadingsOn;
   $('setupSub').textContent = state.guideVersion
     ? `Guide version ${state.guideVersion}. Do this once, and again when the guide changes.`
     : 'Do this once, and again when the guide changes.';
@@ -664,6 +666,7 @@ document.querySelectorAll('input[name=assistant]').forEach((r) => r.addEventList
 }));
 
 $('showTypes').addEventListener('change', (e) => saveSettings({ showTypes: e.target.checked }));
+$('heapReadingsOn').addEventListener('change', (e) => saveSettings({ heapReadingsOn: e.target.checked }));
 
 $('copyDiagnostics').addEventListener('click', async () => {
   try {

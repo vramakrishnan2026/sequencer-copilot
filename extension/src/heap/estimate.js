@@ -216,6 +216,32 @@ export function analyzePython(code) {
   const namesEst = [...ids].reduce((n, x) => n + x.length + 2, 0);
   const floatsEst = [...new Set([...code.matchAll(/\b\d+\.\d+\b/g)].map((x) => x[0]))].reduce((n, x) => n + x.length + 2, 0);
   const mpyEst = Math.round(0.844 * codeEst + 28 + namesEst + floatsEst + 21 + 19);
+
+  // Temporary data per run (rough): decimal results of arithmetic and of library calls in the
+  // code that runs every cycle are 16-byte objects, about two per operation including the
+  // libraries' own; input conversions add an 800-byte table (measured on both boilers).
+  let runOps = 0;
+  let conversion = false;
+  const grows = new Set();
+  for (const s of out) {
+    if (s.name === 'runStartup') continue;
+    for (const b of s.body) {
+      if (b.model) continue;
+      const t = b.text;
+      if (/^(while|for|import|from)\b/.test(t) || /^[A-Za-z_]\w*\s*=\s*None$/.test(t) || /^(runStartup|runContinuous)\(\)$/.test(t)) continue;
+      const arith = (t.replace(/'[^']*'|"[^"]*"/g, '').match(/[-+*/%](?!=)/g) || []).length;
+      const calls = (t.match(/[A-Za-z_]\w*\s*\(/g) || []).length;
+      const statementCall = /^[A-Za-z_][\w.]*\(/.test(t) ? 1 : 0;
+      runOps += arith + Math.max(0, calls - statementCall);
+      if (/ConvertValueFromIndex|ConvertResistance/.test(t)) conversion = true;
+      // Data that grows every run: list appends, or text joined onto itself.
+      const app = t.match(/^([A-Za-z_]\w*)\.(append|extend|insert)\(/);
+      if (app && declared.has(app[1])) grows.add(app[1]);
+      const join = t.match(/^([A-Za-z_]\w*)\s*(\+=|=\s*(?:str\()?\1\)?\s*\+)/);
+      if (join && declared.has(join[1]) && /str\(|'|"/.test(t)) grows.add(join[1]);
+    }
+  }
+  const garbagePerRun = Math.round(32 * runOps + (conversion ? 800 : 0));
   const largest = functions.reduce((a, s) => (!a || s.bytes > a.bytes ? s : a), null);
   return {
     sections: out,
@@ -228,6 +254,8 @@ export function analyzePython(code) {
     nameCount,
     libNames: attrs,
     mpyEst,
+    garbagePerRun,
+    grows: [...grows],
     largest: largest ? { name: largest.name, bytes: largest.bytes } : null,
     loose,
     defOrder: functions.map((s) => s.name),
@@ -247,6 +275,39 @@ export function parseGcLines(text) {
   const low = parts.reduce((a, b) => (b.used < a.used ? b : a));
   const high = parts.reduce((a, b) => (b.used > a.used ? b : a));
   return { readings: parts, low, high, steady: parts.length > 1 && low.used === high.used };
+}
+
+/**
+ * Reads a pasted controller log (or bare GC lines). Each GC reading is printed when a run ends.
+ * The one after the start-up run (its log shows "Configuring register" / "Module Loaded") is the
+ * true size; the rest are end-of-run peaks, which include that run's temporary data.
+ * hint: 'startup' when the person says a lone reading was taken right after start-up.
+ */
+export function parseGcLog(text, hint = null) {
+  const t = String(text);
+  const at = [];
+  const re = /GC:\s*total:\s*\d+/gi;
+  for (let m = re.exec(t); m; m = re.exec(t)) at.push(m.index);
+  if (!at.length) return null;
+  const items = at.map((pos, i) => ({
+    gc: parseGcLine(t.slice(pos, at[i + 1] ?? t.length)),
+    before: t.slice(i ? at[i - 1] : 0, pos),
+  })).filter((x) => x.gc);
+  if (!items.length) return null;
+  let startIdx = items.findIndex((x) => /Configuring register|Module Loaded|Module Details/i.test(x.before));
+  let detected = startIdx >= 0;
+  if (!detected && hint === 'startup') startIdx = 0;
+  const startup = startIdx >= 0 ? items[startIdx].gc : null;
+  const runs = items.filter((_, i) => i !== startIdx && (startIdx < 0 || i > startIdx)).map((x) => x.gc);
+  // Does memory build up from run to run? (The same figure every run means it doesn't.)
+  let trend = 'unknown';
+  if (runs.length >= 2) {
+    const used = runs.map((r) => r.used);
+    const rising = used.every((u, i) => !i || u >= used[i - 1]) && used[used.length - 1] - used[0] >= 64;
+    trend = rising && runs.length >= 3 ? 'growing' : 'steady';
+  }
+  const peak = runs.length ? runs.reduce((a, b) => (b.used > a.used ? b : a)) : null;
+  return { startup, runs, peak, trend, detected, count: items.length };
 }
 
 /** Parses one GC reading. Returns null if no "GC: total" line is found. */
@@ -301,11 +362,13 @@ export function verdict(est, own = []) {
   let maxFree = est.maxFree;
   let basis = est.basis;
 
-  // A reading of this sequence at this size beats the prediction.
+  // A reading of this sequence at this size beats the prediction. Only a reading from right after
+  // start-up gives the true size; end-of-run readings include temporary data.
   const measured = own.find((r) => r.blocks === est.blocks) || null;
-  if (measured?.gc) {
-    trueSize = Math.max(0, measured.gc.used - HEAP.baseline);
-    if (measured.gc.maxFree != null) maxFree = measured.gc.maxFree * HEAP.gcBlock;
+  const mStartup = measured?.phase === 2 ? measured.startup : null;
+  if (mStartup) {
+    trueSize = Math.max(0, mStartup.used - HEAP.baseline);
+    if (mStartup.maxFree != null) maxFree = mStartup.maxFree * HEAP.gcBlock;
     basis = 'a reading from the controller';
   }
 
@@ -315,21 +378,49 @@ export function verdict(est, own = []) {
   if (measured?.outcome === 'failed') level = 'too-large';
   else if (measured?.outcome === 'ran' && level === 'too-large') level = 'tight';
 
+  // While running: memory fills with each run's temporary data and is cleared at the start of the
+  // next run. What matters for "later" is whether it builds up from run to run.
+  const mRuns = measured?.phase === 2 ? measured.runs || [] : measured?.gc ? [measured.gc] : [];
+  const measuredPeak = mRuns.length ? Math.max(...mRuns.map((r) => r.used)) : null;
+  const predictedPeak = est.garbagePerRun != null
+    ? Math.min(HEAP.total - 512, HEAP.baseline + trueSize + est.garbagePerRun) : null;
+  const peakUsed = measuredPeak ?? predictedPeak;
+  const trend = measured?.phase === 2 ? measured.trend : 'unknown';
+  const grows = est.grows || [];
+  const run = {
+    peakUsed,
+    peakShare: peakUsed != null ? Math.min(1, (peakUsed - HEAP.baseline) / HEAP.budget) : null,
+    measured: measuredPeak != null,
+    runs: mRuns.length,
+    trend,
+    grows,
+    garbagePerRun: est.garbagePerRun,
+  };
+  if (trend === 'growing') level = 'too-large';
+  else if (grows.length && level === 'fits') level = 'tight';
+
   const pct = trueSize / HEAP.budget;
   const approx = basis === 'a reading from the controller' || est.exactMpy ? '' : 'about ';
   reasons.push(`True size (used after startup, above the 2,640 baseline): ${approx}${fmtBytes(trueSize)}, ${Math.round(pct * 100)}% of the ${fmtBytes(HEAP.budget)} left by the firmware${est.mpyBytes && basis !== 'a reading from the controller' ? `, from a ${est.exactMpy ? '' : 'predicted '}.mpy of ${fmtBytes(est.mpyBytes)} (1.3 × .mpy − 780)` : ''}.`);
   reasons.push(`Largest free piece after startup: ${approx}${fmtBytes(maxFree)} (${blocksOf(maxFree)} blocks). Working sequences had 254 and 156 blocks; the failing 1,043-block original showed 80 and 55. Getting full below 220 blocks, likely too big below 125.`);
   if (measured) {
-    reasons.push(`Measured on the controller (${measured.blocks} blocks): ${measured.outcome === 'ran' ? 'it ran' : 'it failed'}; used after startup ${measured.gc.used}${measured.gc.maxFree != null ? `, largest free piece ${measured.gc.maxFree} blocks` : ''}${measured.gcHigh ? `; up to ${measured.gcHigh.used} with one run's temporary data (${fmtBytes(measured.gcHigh.used - measured.gc.used)}), which is collected when the heap fills and isn't a limit` : ''}.`);
+    reasons.push(`Measured on the controller (${measured.blocks} blocks): ${measured.outcome === 'ran' ? 'it ran' : 'it failed'}${mStartup ? `; after start-up ${mStartup.used} used, largest free piece ${mStartup.maxFree ?? '?'} blocks` : '; no reading from right after start-up, so the true size is predicted'}.`);
   }
-  reasons.push('Temporary data from each run isn\'t counted: the controller clears it when the heap fills and carries on.');
+  if (peakUsed != null) {
+    reasons.push(`While running: ${run.measured ? `measured up to ${peakUsed} used at the end of a run` : `about ${fmtBytes(est.garbagePerRun)} of temporary data a run (rough), so up to about ${Math.round(peakUsed)} used`}. That's cleared at the start of the next run and isn't a limit: the boiler rebuild runs at 11,456 used (17–30 blocks free) every run.`);
+  }
+  if (trend === 'growing') reasons.push(`Measured over ${mRuns.length} runs, "used" at the end of each run kept rising (${mRuns.map((r) => r.used).join(' → ')}). Memory is building up and will run out.`);
+  else if (trend === 'steady') reasons.push(`Measured over ${mRuns.length} runs: the same pattern every run, so memory isn't building up.`);
+  if (grows.length) reasons.push(`The code adds to ${grows.join(', ')} every run (a list append or text joined onto itself), so its memory can keep growing.`);
 
   if (level !== 'fits') {
     plain.push(level === 'tight'
       ? 'The controller needs some unbroken free memory to work with, and after this sequence starts there isn\'t much left in one piece.'
       : 'After this sequence starts, the controller would have too little free memory left in one piece to work with.');
   }
-  return { level, pct, share: `${Math.round(pct * 100)}%`, basis, reasons, plain, measured, trueSize, maxFree };
+  if (trend === 'growing') plain.push('Measured on the controller, its memory use grew from run to run. It will run out of memory after a while.');
+  else if (grows.length) plain.push(`It adds to ${grows.join(', ')} on every run, so its memory use can keep growing over time until it runs out.`);
+  return { level, pct, share: `${Math.round(pct * 100)}%`, basis, reasons, plain, measured, trueSize, maxFree, run };
 }
 
 // -------------------------------------------------------------------------------- suggestions
@@ -570,6 +661,7 @@ export function estimate(src, readings = [], mpy = null) {
   }
   const est = { total, maxFree: maxFreeAfterStartup(total), blocks, basis, mpyBytes, exactMpy, largest,
     fromPython: !!src.python, exact: mpy?.code != null ? mpy : null,
+    garbagePerRun: analysis?.garbagePerRun ?? null, grows: analysis?.grows ?? [],
     modelPoints: analysis?.modelPoints ?? null };
   return { est, analysis, own, verdict: verdict(est, own), suggestions: analysis ? suggestions(analysis) : [] };
 }

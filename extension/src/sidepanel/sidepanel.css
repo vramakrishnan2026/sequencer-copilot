@@ -257,3 +257,11 @@ label.field input { width: 100%; min-height: 38px; padding: 6px 10px; border: 1p
 .heap-measured.ok { color: var(--ok); } .heap-measured.bad { color: var(--danger); }
 .heap-toggle { align-self: center; font-size: 13px; padding: 4px 8px; }
 .heap-others summary { cursor: pointer; font-size: 13px; color: var(--muted); padding: 4px 0; }
+
+/* ---- Memory phases (0.9.7) ---- */
+.heap-phase { display: flex; justify-content: space-between; font-size: 13px; margin-top: 4px; }
+.heap-phase strong { font-weight: 600; }
+.heap-gauge.run .fill.base { background: var(--muted); opacity: .45; }
+.heap-gauge.run .fill.temp { background: repeating-linear-gradient(135deg, var(--duct) 0 6px, transparent 6px 10px); border-radius: 0 8px 8px 0; }
+.heap-steady { color: var(--ok); }
+label.check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }

@@ -1,4 +1,4 @@
-import { HEAP, bandShares, estimate, fmtBytes, parseGcLines, parseMpy, withSuperloop } from './estimate.js';
+import { HEAP, bandShares, estimate, fmtBytes, parseGcLog, parseMpy, withSuperloop } from './estimate.js';
 
 /**
  * Memory check view: estimate, verdict, where the space goes, ways to cut, and calibration
@@ -28,7 +28,7 @@ const LEVEL = {
 
 // One sentence for a non-specialist, per verdict.
 function plainSummary(v) {
-  if (v.level === 'fits') return `After it starts, this sequence takes about ${v.share} of the memory the controller has for sequences, and leaves plenty free.`;
+  if (v.level === 'fits') return `After it starts, this sequence takes about ${v.share} of the memory the controller has for sequences, and leaves enough free in one piece.`;
   if (v.level === 'tight') return `After it starts, this sequence takes about ${v.share} of the memory the controller has for sequences. It should run, but the free memory left is getting small.`;
   return `After it starts, this sequence would take about ${v.share} of the memory the controller has for sequences. It's likely to stop with a memory error.`;
 }
@@ -39,7 +39,7 @@ async function loadReadings() {
 }
 const saveReadings = (list) => chrome.storage.local.set({ [READINGS_KEY]: list });
 
-export function createHeapView(root, { loadSource, build, onError }) {
+export function createHeapView(root, { loadSource, build, readingsOn = () => false, onError }) {
   let last = null; // { src, result, readings, mpy }
 
   async function load() {
@@ -48,8 +48,9 @@ export function createHeapView(root, { loadSource, build, onError }) {
       const [src, readings] = await Promise.all([loadSource(), loadReadings()]);
       // The Sequencer adds its superloop when it builds; include it so the sizes match.
       if (src.python) src.python = withSuperloop(src.python);
-      const result = estimate(src, readings);
-      last = { src, result, readings, mpy: null };
+      const used = readingsOn() ? readings : [];
+      const result = estimate(src, used);
+      last = { src, result, readings: used, mpy: null };
       render();
       return true;
     } catch (err) {
@@ -68,22 +69,36 @@ export function createHeapView(root, { loadSource, build, onError }) {
 
     // ---------------------------------------------------------------- simple view
     const gaugePct = Math.min(100, Math.round(v.pct * 100));
-    const gauge = el('div', { class: 'heap-gauge', role: 'img', 'aria-label': `About ${gaugePct}% of the memory for sequences` },
+    const gauge = el('div', { class: 'heap-gauge', role: 'img', 'aria-label': `After start-up: about ${gaugePct}% of the memory for sequences` },
       el('span', { class: `fill ${lv.cls}`, style: `width:${gaugePct}%` }),
       el('i', { class: 'mark tight', style: `left:${bandShares().tight * 100}%` }),
       el('i', { class: 'mark full', style: `left:${bandShares().tooBig * 100}%` }));
+    const r = v.run;
+    const peakPct = r.peakShare != null ? Math.round(r.peakShare * 100) : null;
+    const runGauge = peakPct != null ? el('div', { class: 'heap-gauge run', role: 'img', 'aria-label': `During each run: up to about ${peakPct}%` },
+      el('span', { class: 'fill base', style: `width:${gaugePct}%` }),
+      el('span', { class: 'fill temp', style: `left:${gaugePct}%;width:${Math.max(0, peakPct - gaugePct)}%` })) : null;
+    let steadyText;
+    if (r.trend === 'growing') steadyText = null; // covered by the plain warning
+    else if (r.grows.length) steadyText = null;
+    else if (r.trend === 'steady') steadyText = `Checked on the controller over ${r.runs} runs: the same every run. It doesn't build up, so it won't run out later.`;
+    else steadyText = 'It keeps a fixed set of values, so memory use repeats the same way every run and doesn\'t build up over time.';
     const measuredLine = v.measured
       ? el('p', { class: v.measured.outcome === 'ran' ? 'heap-measured ok' : 'heap-measured bad' },
         v.measured.outcome === 'ran' ? 'Measured on the controller: it ran.' : 'Measured on the controller: it failed.')
       : null;
     const simple = el('section', { class: `heap-verdict ${lv.cls}`, 'aria-live': 'polite' },
       el('div', { class: 'heap-level' }, lv.label),
+      el('div', { class: 'heap-phase' }, el('span', {}, 'After it starts'), el('strong', {}, `${gaugePct}%`)),
       gauge,
-      el('div', { class: 'heap-gauge-scale hint' }, el('span', {}, 'Empty'), el('span', {}, `About ${gaugePct}% used`), el('span', {}, 'Full')),
+      runGauge ? el('div', { class: 'heap-phase' }, el('span', {}, 'During each run'), el('strong', {}, `up to ${peakPct}%`)) : null,
+      runGauge,
       el('p', {}, plainSummary(v)),
+      peakPct != null ? el('p', {}, `During each run it fills to ${r.measured ? '' : 'about '}${peakPct}% with temporary data, which the controller clears before the next run. That's normal.`) : null,
+      steadyText ? el('p', { class: 'heap-steady' }, steadyText) : null,
       v.plain.map((t) => el('p', {}, t)),
       measuredLine,
-      el('p', { class: 'hint' }, `Worked out from ${v.basis}${v.basis === 'a reading from the controller' || est.exactMpy ? '' : '; an estimate'}.`));
+      el('p', { class: 'hint' }, `Worked out from ${v.basis}${v.basis === 'a reading from the controller' || est.exactMpy ? '' : '; an estimate'}${r.measured ? '' : '. The run figure is rough'}.`));
 
     const todo = suggestions.filter((x) => x.plain).slice(0, 3);
     const actions = todo.length
@@ -168,7 +183,15 @@ export function createHeapView(root, { loadSource, build, onError }) {
         el('ol', { class: 'heap-cuts' }, suggestions.map((x) => el('li', {}, x.text))))
       : null;
 
-    return [reasons, numbers, where, cuts, calibrateCard(readings, result.own)];
+    const copy = src.python ? el('button', { type: 'button', class: 'small' }, 'Copy generated code') : null;
+    copy?.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(src.python);
+      copy.textContent = 'Copied';
+      setTimeout(() => { copy.textContent = 'Copy generated code'; }, 1500);
+    });
+    const codeCard = copy ? el('section', { class: 'card heap-card' }, el('h2', {}, 'Generated code'),
+      el('p', { class: 'hint' }, 'The Python the Sequencer makes from this canvas (with its superloop), as used for the prediction.'), copy) : null;
+    return [reasons, numbers, where, cuts, codeCard, readingsOn() ? calibrateCard(readings, result.own) : null];
   }
 
   function exactCard() {
@@ -199,38 +222,43 @@ export function createHeapView(root, { loadSource, build, onError }) {
   function calibrateCard(readings, own) {
     const seq = last.src.sequence || null;
     const ta = el('textarea', { id: 'gcLine', rows: '6', 'aria-describedby': 'gcHelp',
-      placeholder: 'GC: total: 11968, used: …, free: …\nNo. of 1-blocks: …, max blk sz: …, max free sz: …\n(paste several readings)' });
+      placeholder: 'Paste the controller log from the push onwards, or just its GC lines' });
     const ran = el('input', { type: 'radio', name: 'gcOutcome', value: 'ran', checked: true });
     const failed = el('input', { type: 'radio', name: 'gcOutcome', value: 'failed' });
+    const atStart = el('input', { type: 'checkbox' });
     const msg = el('p', { class: 'hint', role: 'status' });
     const save = el('button', { type: 'button', class: 'primary' }, 'Save reading');
     save.addEventListener('click', async () => {
-      const all = parseGcLines(ta.value);
-      if (!all) { msg.textContent = 'Paste the lines that start with "GC: total:".'; return; }
+      const log = parseGcLog(ta.value, atStart.checked ? 'startup' : null);
+      if (!log) { msg.textContent = 'Paste the log, or the lines that start with "GC: total:".'; return; }
       const est = last.result.est;
       const reading = {
+        phase: 2,
         at: new Date().toISOString(),
         sequence: seq,
         outcome: failed.checked ? 'failed' : 'ran',
         blocks: est.blocks,
-        total: est.total,
-        largestEst: est.largest?.bytes ?? null,
-        largestName: est.largest?.name ?? null,
-        exact: !!est.exact,
-        gc: all.low,
-        gcHigh: all.readings.length > 1 ? all.high : null,
-        gcCount: all.readings.length,
-        gcSteady: all.steady,
+        mpyBytes: est.mpyBytes,
+        startup: log.startup,
+        runs: log.runs.slice(-20),
+        trend: log.trend,
       };
-      // One reading per sequence and size: a new one replaces the old.
       const kept = (await loadReadings()).filter((r) => !(seq && r.sequence?.key === seq.key && r.blocks === reading.blocks));
       await saveReadings([reading, ...kept].slice(0, 50));
       await load();
+      if (!log.startup) msg.textContent = 'Saved. No reading from right after start-up was found, so the true size is still predicted. Paste the log from the push onwards to include it.';
     });
 
+    const describe = (r) => {
+      if (r.phase === 2) {
+        const peak = r.runs?.length ? Math.max(...r.runs.map((x) => x.used)) : null;
+        return `${r.startup ? `after start-up ${r.startup.used} (${r.startup.maxFree} blocks free)` : 'no start-up reading'}${peak != null ? ` · runs up to ${peak}` : ''}${r.trend !== 'unknown' ? ` · ${r.trend} over ${r.runs.length} runs` : ''}`;
+      }
+      return `used ${r.gc.used} (older reading, phase unknown)`;
+    };
     const item = (r) => el('li', {},
       el('span', { class: r.outcome === 'ran' ? 'outcome-ok' : 'outcome-bad' }, r.outcome === 'ran' ? 'Ran' : 'Failed'),
-      el('span', {}, ` · ${new Date(r.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} · ${r.blocks} blocks · used ${r.gc.used}${r.gcHigh ? `–${r.gcHigh.used}` : ''}${r.gcCount > 1 ? ` (${r.gcCount} readings${r.gcSteady ? ', steady' : ''})` : ' (1 reading)'}${r.gc.maxBlk != null ? ` · max blk ${r.gc.maxBlk}` : ''}`),
+      el('span', {}, ` · ${new Date(r.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} · ${r.blocks} blocks · ${describe(r)}`),
       el('button', { type: 'button', class: 'link', 'aria-label': 'Delete this reading', onclick: async () => {
         await saveReadings((await loadReadings()).filter((x) => x.at !== r.at));
         await load();
@@ -245,8 +273,9 @@ export function createHeapView(root, { loadSource, build, onError }) {
 
     return el('section', { class: 'card heap-card' },
       el('h2', {}, 'Add a reading from the controller'),
-      el('p', { class: 'hint', id: 'gcHelp' }, `Push this canvas, then paste the GC lines from right after startup and from the end of a run, all together, and say whether it ran. The lowest "used" is kept as the true size; the highest shows one run's temporary data, which isn't a limit. Readings are kept for this sequence${seq?.name ? ` (${seq.name})` : ''} only, in this browser.`),
+      el('p', { class: 'hint', id: 'gcHelp' }, `Push this canvas, then paste the controller log from the push onwards, covering a few runs. The reading after start-up gives the true size; the later ones show the peak during runs and whether memory builds up. Kept for this sequence${seq?.name ? ` (${seq.name})` : ''} only, in this browser.`),
       ta,
+      el('label', { class: 'check' }, atStart, el('span', {}, 'The first GC reading is from right after start-up (tick this if you pasted only GC lines)')),
       el('div', { class: 'heap-outcome', role: 'radiogroup', 'aria-label': 'Did it run?' },
         el('label', { class: 'radio' }, ran, el('span', {}, 'It ran')),
         el('label', { class: 'radio' }, failed, el('span', {}, 'It failed'))),
