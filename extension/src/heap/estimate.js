@@ -20,20 +20,19 @@ export const HEAP = {
   firmwareBlock: 800, // "max blk sz" 50 blocks with nothing loaded
   modelPerPoint: 29,
   largestRan: 1920, // largest "max blk sz" seen on a load that ran (120 blocks)
-  // Verdict bands, as a share of what the firmware leaves for a sequence. Measured: the boiler at
-  // ~8,400 (90%) ran pinned at the limit with 80 bytes of largest free piece; its 10% bigger
-  // original failed.
-  tightFrom: 0.75,
-  tooLargeFrom: 0.94,
-  // Costs of running a program that aren't in the compiled file (MicroPython object sizes on a
-  // 32-bit port; checked against the boiler, 8,432 measured with the heap pinned full).
-  perVariableValue: 16, // a decimal value held by each global variable
-  perGlobalSlot: 10, // the globals table, with spare room
-  perCodeBlock: 40, // bookkeeping for the module and each function
-  perName: 4, // name-table overhead per name
-  // Temporary objects per run, roughly: measured ~80 bytes a run with 18 model registers.
-  garbageBase: 40,
-  garbagePerRegister: 4,
+  // Measured 25 Nov on the controller (format 6.2, MicroPython 1.22). "Used after startup" is the
+  // true size; end-of-run figures include one run's garbage and are not a limit.
+  //   true size above baseline = 1.3 x .mpy bytes - 780   (within 1.5% on 55, 787 and 942 blocks)
+  mpyFactor: 1.3,
+  mpyOffset: 780,
+  // Largest free piece after startup = free - (100 + 1.7e-5 x true^2): fragmentation grows with
+  // size. Fitted to 576 / 534 / 254 / 156 blocks measured; predicts 252 and 158 for the boilers.
+  fragBase: 100,
+  fragPerSquare: 1.7e-5,
+  // Verdict on the largest free piece after startup: working sequences had 254 and 156 blocks;
+  // the failing 1,043-block original showed 80 and 55 (its true size wasn't measured).
+  tooBigBelow: 2000, // bytes (125 blocks)
+  tightBelow: 3520, // bytes (220 blocks)
 };
 
 // Loads measured on the controller. Block counts only: the generated Python wasn't captured.
@@ -202,6 +201,21 @@ export function analyzePython(code) {
 
   const functions = out.filter((s) => s.kind === 'function');
   const program = out.reduce((n, s) => n + s.bytes + s.data, 0) + qstrBytes;
+
+  // Predicted .mpy size (fitted against mpy-cross 1.22 on 14 programs, 550 B to 11 KB: within 2%):
+  // 0.844 x estimated code + names table + constants + header and the service's file name.
+  let codeEst = out.reduce((n, s) => n + s.bytes, 0);
+  for (const s of out) for (const b of s.body) if (b.model) codeEst += lineCost(b.text).bytes;
+  const ids = new Set(['connmod', 'uniInputMapping']);
+  for (const s of out) for (const b of s.body) {
+    for (const t of b.text.matchAll(/'([^']*)'|"([^"]*)"/g)) ids.add(t[1] ?? t[2]);
+    for (const t of b.text.replace(/'[^']*'|"[^"]*"/g, '').matchAll(/[A-Za-z_]\w*/g)) if (!Object.hasOwn(KEYWORD_COST, t[0]) && t[0] !== 'range') ids.add(t[0]);
+  }
+  for (const d of declared) ids.add(d);
+  for (const f of functions) ids.add(f.name);
+  const namesEst = [...ids].reduce((n, x) => n + x.length + 2, 0);
+  const floatsEst = [...new Set([...code.matchAll(/\b\d+\.\d+\b/g)].map((x) => x[0]))].reduce((n, x) => n + x.length + 2, 0);
+  const mpyEst = Math.round(0.844 * codeEst + 28 + namesEst + floatsEst + 21 + 19);
   const largest = functions.reduce((a, s) => (!a || s.bytes > a.bytes ? s : a), null);
   return {
     sections: out,
@@ -213,6 +227,7 @@ export function analyzePython(code) {
     names: qstrBytes,
     nameCount,
     libNames: attrs,
+    mpyEst,
     largest: largest ? { name: largest.name, bytes: largest.bytes } : null,
     loose,
     defOrder: functions.map((s) => s.name),
@@ -253,67 +268,68 @@ export function readingsFor(readings, key) {
   return key ? readings.filter((r) => r.sequence?.key === key) : [];
 }
 
+/** True size above the firmware baseline, from the .mpy size. */
+export const trueSizeFromMpy = (mpyBytes) => Math.max(0, HEAP.mpyFactor * mpyBytes - HEAP.mpyOffset);
+
+/** Largest free piece right after startup, in bytes, from the true size. */
+export function maxFreeAfterStartup(trueSize) {
+  const free = HEAP.budget - trueSize;
+  return Math.max(0, free - (HEAP.fragBase + HEAP.fragPerSquare * trueSize * trueSize));
+}
+
+const blocksOf = (bytes) => Math.round(bytes / HEAP.gcBlock);
+
+/** Where the verdict bands fall on the true-size gauge (share of the budget), for its markers. */
+export function bandShares() {
+  const at = (limit) => {
+    let lo = 0; let hi = HEAP.budget;
+    for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (maxFreeAfterStartup(mid) > limit) lo = mid; else hi = mid; }
+    return lo / HEAP.budget;
+  };
+  return { tight: at(HEAP.tightBelow), tooBig: at(HEAP.tooBigBelow) };
+}
+
 /**
- * est: { total, largest, blocks, fromPython, exact, garbage }   total = bytes above the baseline
+ * est: { total (true size above baseline), maxFree, blocks, basis, mpyBytes, largest }
  * own: readings saved for this same sequence.
- * Returns { level, pct, basis, reasons[] (technical), plain[] (layman), measured }.
+ * The verdict rests on the true size and the largest free piece after startup.
  */
 export function verdict(est, own = []) {
   const reasons = [];
   const plain = [];
-  const pct = est.total / HEAP.budget;
-  let level = pct >= HEAP.tooLargeFrom ? 'too-large' : pct >= HEAP.tightFrom ? 'tight' : 'fits';
-  const share = `${Math.round(pct * 100)}%`;
-  reasons.push(`Total: ${est.exact ? '' : 'about '}${fmtBytes(est.total)} of the ${fmtBytes(HEAP.budget)} the firmware leaves (${share}). Getting full from ${Math.round(HEAP.tightFrom * 100)}%, likely too large from ${Math.round(HEAP.tooLargeFrom * 100)}% (the boiler ran pinned at ~90% and failed at ~100%).`);
+  let trueSize = est.total;
+  let maxFree = est.maxFree;
+  let basis = est.basis;
 
-  // A function needs one unbroken piece of heap at load. Allow what this sequence itself has run with.
-  if (est.largest) {
-    const ranWith = Math.max(HEAP.largestRan, ...own.filter((r) => r.outcome === 'ran' && r.gc?.maxBlk).map((r) => r.gc.maxBlk * HEAP.gcBlock));
-    if (est.largest.bytes > ranWith * 1.05) {
-      if (level === 'fits') level = 'tight';
-      reasons.push(`Largest function ${est.largest.name}: ${est.largest.exact ? '' : 'about '}${fmtBytes(est.largest.bytes)}, bigger than any seen running (${fmtBytes(ranWith)}). It needs one unbroken piece of heap at load.`);
-      plain.push(`One part of the sequence (${est.largest.name}) is very large. Splitting it into smaller functions makes it easier for the controller to load.`);
-    } else {
-      reasons.push(`Largest function ${est.largest.name}: ${est.largest.exact ? '' : 'about '}${fmtBytes(est.largest.bytes)}, within what has run (${fmtBytes(ranWith)}).`);
-    }
+  // A reading of this sequence at this size beats the prediction.
+  const measured = own.find((r) => r.blocks === est.blocks) || null;
+  if (measured?.gc) {
+    trueSize = Math.max(0, measured.gc.used - HEAP.baseline);
+    if (measured.gc.maxFree != null) maxFree = measured.gc.maxFree * HEAP.gcBlock;
+    basis = 'a reading from the controller';
   }
 
-  // Temporary data from each run fills the free space and has to be cleared.
-  if (est.garbage?.fillSeconds != null) {
-    const f = est.garbage.fillSeconds;
-    reasons.push(`Temporary data: about ${fmtBytes(est.garbage.perRun)} a run, every ${est.garbage.runRate} s, fills the ${fmtBytes(est.garbage.room)} left in about ${f < 120 ? `${Math.round(f)} s` : `${Math.round(f / 60)} min`} (rough). When it's full the controller clears it; the moments just before are when a memory error can happen.`);
-    if (f < 60 && level !== 'too-large') {
-      if (level === 'fits' && f < 20) level = 'tight';
-      plain.push(`It runs every ${est.garbage.runRate} s, so memory fills with temporary data about every ${Math.max(1, Math.round(f))} seconds and has to be cleared. Running it less often (for example every 5 to 10 s) lowers the chance of a memory error.`);
-    }
-  }
+  let level = 'fits';
+  if (trueSize >= HEAP.budget || maxFree < HEAP.tooBigBelow) level = 'too-large';
+  else if (maxFree < HEAP.tightBelow) level = 'tight';
+  if (measured?.outcome === 'failed') level = 'too-large';
+  else if (measured?.outcome === 'ran' && level === 'too-large') level = 'tight';
 
-  // What happened on the controller, for this sequence at this size.
-  const same = own.filter((r) => r.blocks === est.blocks);
-  const measured = same[0] || null;
+  const pct = trueSize / HEAP.budget;
+  const approx = basis === 'a reading from the controller' || est.exactMpy ? '' : 'about ';
+  reasons.push(`True size (used after startup, above the 2,640 baseline): ${approx}${fmtBytes(trueSize)}, ${Math.round(pct * 100)}% of the ${fmtBytes(HEAP.budget)} left by the firmware${est.mpyBytes && basis !== 'a reading from the controller' ? `, from a ${est.exactMpy ? '' : 'predicted '}.mpy of ${fmtBytes(est.mpyBytes)} (1.3 × .mpy − 780)` : ''}.`);
+  reasons.push(`Largest free piece after startup: ${approx}${fmtBytes(maxFree)} (${blocksOf(maxFree)} blocks). Working sequences had 254 and 156 blocks; the failing 1,043-block original showed 80 and 55. Getting full below 220 blocks, likely too big below 125.`);
   if (measured) {
-    const used = measured.gc.used - HEAP.baseline;
-    reasons.push(`Measured on the controller (${measured.blocks} blocks): ${measured.outcome === 'ran' ? 'it ran' : 'it failed'}, lowest used ${measured.gc.used} (${fmtBytes(used)} above the baseline)${measured.gcSteady ? '; readings didn\'t move, so the heap was pinned full' : ''}.`);
-    if (measured.outcome === 'failed') level = 'too-large';
-    else {
-      // The controller's own lowest reading wins over the estimate when it's higher.
-      const mPct = used / HEAP.budget;
-      if (mPct > pct) {
-        const mLevel = mPct >= HEAP.tooLargeFrom ? 'too-large' : mPct >= HEAP.tightFrom ? 'tight' : 'fits';
-        const rank = { fits: 0, tight: 1, 'too-large': 2 };
-        if (rank[mLevel] > rank[level]) level = mLevel;
-      }
-      if (level === 'too-large') level = 'tight'; // it did run
-    }
+    reasons.push(`Measured on the controller (${measured.blocks} blocks): ${measured.outcome === 'ran' ? 'it ran' : 'it failed'}; used after startup ${measured.gc.used}${measured.gc.maxFree != null ? `, largest free piece ${measured.gc.maxFree} blocks` : ''}${measured.gcHigh ? `; up to ${measured.gcHigh.used} with one run's temporary data (${fmtBytes(measured.gcHigh.used - measured.gc.used)}), which is collected when the heap fills and isn't a limit` : ''}.`);
   }
+  reasons.push('Temporary data from each run isn\'t counted: the controller clears it when the heap fills and carries on.');
 
-  let basis = est.exact ? 'the compiled program' : est.fromPython ? 'the generated code' : 'the number of blocks';
-  let shown = pct;
-  if (measured && measured.outcome === 'ran') {
-    const mPct = (measured.gc.used - HEAP.baseline) / HEAP.budget;
-    if (mPct > pct) { shown = mPct; basis = 'a reading from the controller'; }
+  if (level !== 'fits') {
+    plain.push(level === 'tight'
+      ? 'The controller needs some unbroken free memory to work with, and after this sequence starts there isn\'t much left in one piece.'
+      : 'After this sequence starts, the controller would have too little free memory left in one piece to work with.');
   }
-  return { level, pct: shown, share: `${Math.round(shown * 100)}%`, basis, reasons, plain, measured };
+  return { level, pct, share: `${Math.round(pct * 100)}%`, basis, reasons, plain, measured, trueSize, maxFree };
 }
 
 // -------------------------------------------------------------------------------- suggestions
@@ -522,54 +538,38 @@ export function fmtBytes(n) {
  * Whole estimate. src: { python, blocks, stacks } from the page; readings: stored readings.
  * Without the generated Python it falls back to ~12 bytes per block (measured range 9 to 16).
  */
-/** Rough temporary data per run, and how soon it fills the room left. */
-function garbageFor(total, registers, runRate) {
-  if (!runRate) return null;
-  const perRun = HEAP.garbageBase + HEAP.garbagePerRegister * registers;
-  const room = Math.max(0, HEAP.budget - total);
-  return { perRun, runRate, room, fillSeconds: room / (perRun / runRate) };
-}
-
 /**
- * Whole estimate. src: { python, blocks, sequence, runRate } from the page; readings: all stored
- * readings (only this sequence's are used); mpy: a parsed build from the 75F compiler, if any.
+ * Whole estimate. src: { python, blocks, sequence, mpySize } from the page (mpySize: the .mpy the
+ * Sequencer's own build returned, when caught); readings: all stored readings (only this
+ * sequence's are used); mpy: a parsed build from the 75F compiler button, if any.
  */
 export function estimate(src, readings = [], mpy = null) {
   const blocks = src.blocks ?? 0;
   const own = readingsFor(readings, src.sequence?.key);
+  let analysis = null;
+  let mpyBytes = null;
+  let exactMpy = false;
+  let basis;
+  if (mpy?.total) { mpyBytes = mpy.total; exactMpy = true; basis = 'the compiled program'; }
+  else if (src.mpySize) { mpyBytes = src.mpySize; exactMpy = true; basis = 'the Sequencer\'s last build'; }
   if (src.python) {
-    const a = analyzePython(src.python);
-    const model = a.modelPoints * HEAP.modelPerPoint;
-    const codeBlocks = a.functions + 1;
-    const runtime = a.variables * HEAP.perVariableValue
-      + (a.variables + a.functions + 6) * HEAP.perGlobalSlot
-      + codeBlocks * HEAP.perCodeBlock;
-    let program;
-    let largest = a.largest ? { name: a.largest.name, bytes: a.largest.bytes } : null;
-    let exact = null;
-    if (mpy?.code != null) {
-      // Real compiled sizes. The model's calls are inside runStartup's code; take them out there
-      // and count the model at its measured cost.
-      const modelCode = a.modelPoints * 2 * 15;
-      const lib = new Set([...a.libNames, 'connmod', 'uniInputMapping', 'math', 'sys', 'types']);
-      const own = (mpy.names || []).filter((n, i) => !(i === 0 && /\.py$/.test(n)) && !lib.has(n));
-      const ownNames = own.reduce((n, x) => n + x.length + 5, 0);
-      program = Math.max(0, mpy.code - modelCode) + ownNames + own.length * HEAP.perName
-        + (mpy.consts?.bytes || 0) + (mpy.consts?.floats || 0) * 16;
-      const big = mpy.functions.reduce((x, f) => (!x || f.bytes > x.bytes ? f : x), null);
-      largest = big ? { name: big.name, bytes: big.bytes, exact: true } : largest;
-      exact = mpy;
-    } else {
-      program = a.program + a.nameCount * HEAP.perName;
-    }
-    const total = model + program + runtime;
-    const est = { total, model, program, runtime, largest, blocks, fromPython: true, exact,
-      garbage: garbageFor(total, a.modelPoints, src.runRate) };
-    return { est, analysis: a, own, verdict: verdict(est, own), suggestions: suggestions(a) };
+    analysis = analyzePython(src.python);
+    if (!mpyBytes) { mpyBytes = analysis.mpyEst; basis = 'the generated code'; }
   }
-  // No code: about 11 bytes a block (measured 9 to 14 across the sequences tested).
-  const total = blocks * 11;
-  const est = { total, model: null, program: total, runtime: 0, largest: null, blocks, fromPython: false, exact: null,
-    garbage: garbageFor(total, 0, src.runRate) };
-  return { est, analysis: null, own, verdict: verdict(est, own), suggestions: [] };
+  let total;
+  if (mpyBytes) total = trueSizeFromMpy(mpyBytes);
+  else {
+    // No code: interpolate the measured sequences by block count (rough).
+    total = blocks <= 55 ? blocks * 12.5 : 688 + (blocks - 55) * ((6064 - 688) / (942 - 55));
+    basis = 'the number of blocks';
+  }
+  let largest = analysis?.largest ? { name: analysis.largest.name, bytes: analysis.largest.bytes } : null;
+  if (mpy?.code != null) {
+    const big = mpy.functions.reduce((x, f) => (!x || f.bytes > x.bytes ? f : x), null);
+    if (big) largest = { name: big.name, bytes: big.bytes, exact: true };
+  }
+  const est = { total, maxFree: maxFreeAfterStartup(total), blocks, basis, mpyBytes, exactMpy, largest,
+    fromPython: !!src.python, exact: mpy?.code != null ? mpy : null,
+    modelPoints: analysis?.modelPoints ?? null };
+  return { est, analysis, own, verdict: verdict(est, own), suggestions: analysis ? suggestions(analysis) : [] };
 }

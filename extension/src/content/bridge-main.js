@@ -30,8 +30,23 @@
       const j = JSON.parse(body);
       // The Sequencer first compiles a trial copy (with a shim and a 10-run loop); keep the real one.
       if (typeof j.snippet !== 'string' || /__loop_guard/.test(j.snippet)) return;
-      captured.build = { python: j.snippet, at: new Date().toISOString(), seq: watch.seq, canvasId: watch.canvasId };
+      captured.build = { python: j.snippet, at: new Date().toISOString(), seq: watch.seq, canvasId: watch.canvasId, mpySize: null };
+      return captured.build;
     } catch { /* not JSON */ }
+    return null;
+  }
+  // Size of the .mpy the compiler sent back, however the page asked for it.
+  async function sizeOfResponse(resp) {
+    try {
+      if (resp instanceof ArrayBuffer) return new Uint8Array(resp)[0] === 0x4d ? resp.byteLength : null;
+      if (resp instanceof Blob) return resp.size;
+      if (typeof resp === 'string') {
+        const t = resp.trim().replace(/^"|"$/g, '');
+        if (/^4d06[0-9a-f]*$/i.test(t)) return t.length / 2;
+        if (/^TQY[A-Za-z0-9+/=]*$/.test(t)) return atob(t).length;
+      }
+    } catch { /* unknown shape */ }
+    return null;
   }
   try {
     const open = XMLHttpRequest.prototype.open;
@@ -41,13 +56,21 @@
       return open.call(this, method, url, ...rest);
     };
     XMLHttpRequest.prototype.send = function (body) {
-      noteBuild(this.__seqCopilotUrl, body);
+      const b = noteBuild(this.__seqCopilotUrl, body);
+      if (b) {
+        this.addEventListener('load', async () => {
+          try { if (this.status === 200) b.mpySize = await sizeOfResponse(this.response); } catch { /* ignore */ }
+        });
+      }
       return send.call(this, body);
     };
     const fetchOrig = window.fetch;
     window.fetch = function (input, init) {
-      try { noteBuild(typeof input === 'string' ? input : input?.url, init?.body); } catch { /* ignore */ }
-      return fetchOrig.apply(this, arguments);
+      let b = null;
+      try { b = noteBuild(typeof input === 'string' ? input : input?.url, init?.body); } catch { /* ignore */ }
+      const p = fetchOrig.apply(this, arguments);
+      if (b) p.then((res) => res.clone().arrayBuffer()).then(async (buf) => { b.mpySize = await sizeOfResponse(buf); }).catch(() => {});
+      return p;
     };
   } catch { /* leave the page's networking alone if it can't be wrapped */ }
 
@@ -1783,13 +1806,14 @@
     let name = '';
     try {
       const mb = all.find((b) => b.type === 'model_block');
-      name = (document.title || '').trim();
       const modelText = mb?.getField?.('selected_model')?.getText?.();
-      if (modelText && modelText !== 'select model') name = name ? `${name} · ${modelText}` : modelText;
+      if (modelText && modelText !== 'select model') name = modelText.replace(/\s*\(v\s*[\d.]+\)\s*$/, '');
+      if (!name) name = (document.title || '').replace(/^\s*75f\s*\|\s*/i, '').trim();
     } catch { /* name is optional */ }
     const rateBlock = all.find((b) => b.type === 'sequence_run_continuous')?.getInputTargetBlock?.('run_rate');
     const runRate = Number(rateBlock?.getFieldValue?.('NUM'));
-    return { python, reason, source, builtAt: build?.at || null, blocks: all.length, stacks, change: changeInfo(),
+    return { python, reason, source, builtAt: build?.at || null, mpySize: buildCurrent ? build.mpySize : null,
+      blocks: all.length, stacks, change: changeInfo(),
       sequence: { key: `${location.pathname}${location.search}${location.hash}`, name },
       runRate: Number.isFinite(runRate) && runRate > 0 ? runRate : null };
   }

@@ -1,4 +1,4 @@
-import { HEAP, estimate, fmtBytes, parseGcLines, parseMpy, withSuperloop } from './estimate.js';
+import { HEAP, bandShares, estimate, fmtBytes, parseGcLines, parseMpy, withSuperloop } from './estimate.js';
 
 /**
  * Memory check view: estimate, verdict, where the space goes, ways to cut, and calibration
@@ -28,9 +28,9 @@ const LEVEL = {
 
 // One sentence for a non-specialist, per verdict.
 function plainSummary(v) {
-  if (v.level === 'fits') return `This sequence uses about ${v.share} of the memory the controller has for sequences. There's plenty of room.`;
-  if (v.level === 'tight') return `This sequence uses about ${v.share} of the memory the controller has for sequences. It should run, but there's little room left, so it can stop with a memory error when memory runs short.`;
-  return `This sequence needs about ${v.share} of the memory the controller has for sequences, which is more than is safely available. It's likely to stop with a memory error.`;
+  if (v.level === 'fits') return `After it starts, this sequence takes about ${v.share} of the memory the controller has for sequences, and leaves plenty free.`;
+  if (v.level === 'tight') return `After it starts, this sequence takes about ${v.share} of the memory the controller has for sequences. It should run, but the free memory left is getting small.`;
+  return `After it starts, this sequence would take about ${v.share} of the memory the controller has for sequences. It's likely to stop with a memory error.`;
 }
 
 async function loadReadings() {
@@ -70,8 +70,8 @@ export function createHeapView(root, { loadSource, build, onError }) {
     const gaugePct = Math.min(100, Math.round(v.pct * 100));
     const gauge = el('div', { class: 'heap-gauge', role: 'img', 'aria-label': `About ${gaugePct}% of the memory for sequences` },
       el('span', { class: `fill ${lv.cls}`, style: `width:${gaugePct}%` }),
-      el('i', { class: 'mark tight', style: `left:${HEAP.tightFrom * 100}%` }),
-      el('i', { class: 'mark full', style: `left:${HEAP.tooLargeFrom * 100}%` }));
+      el('i', { class: 'mark tight', style: `left:${bandShares().tight * 100}%` }),
+      el('i', { class: 'mark full', style: `left:${bandShares().tooBig * 100}%` }));
     const measuredLine = v.measured
       ? el('p', { class: v.measured.outcome === 'ran' ? 'heap-measured ok' : 'heap-measured bad' },
         v.measured.outcome === 'ran' ? 'Measured on the controller: it ran.' : 'Measured on the controller: it failed.')
@@ -83,7 +83,7 @@ export function createHeapView(root, { loadSource, build, onError }) {
       el('p', {}, plainSummary(v)),
       v.plain.map((t) => el('p', {}, t)),
       measuredLine,
-      el('p', { class: 'hint' }, `Worked out from ${v.basis}${v.basis === 'a reading from the controller' || est.exact ? '' : '; an estimate'}.`));
+      el('p', { class: 'hint' }, `Worked out from ${v.basis}${v.basis === 'a reading from the controller' || est.exactMpy ? '' : '; an estimate'}.`));
 
     const todo = suggestions.filter((x) => x.plain).slice(0, 3);
     const actions = todo.length
@@ -109,32 +109,32 @@ export function createHeapView(root, { loadSource, build, onError }) {
       el('h2', {}, 'How the verdict was reached'),
       el('ul', { class: 'heap-reasons' }, v.reasons.map((r) => el('li', {}, r))));
 
-    const used = Math.min(1, (HEAP.baseline + est.total) / HEAP.total);
+    const trueSize = v.trueSize;
+    const used = Math.min(1, (HEAP.baseline + trueSize) / HEAP.total);
     const base = HEAP.baseline / HEAP.total;
-    const bar = el('div', { class: 'heap-bar', role: 'img', 'aria-label': `About ${Math.round(used * 100)}% of the heap` },
+    const bar = el('div', { class: 'heap-bar', role: 'img', 'aria-label': `About ${Math.round(used * 100)}% of the heap after startup` },
       el('span', { class: 'firmware', style: `width:${base * 100}%` }),
       el('span', { class: `program ${lv.cls}`, style: `width:${Math.max(0, used - base) * 100}%` }));
     const row = (label, value, note) => el('div', { class: 'heap-row' },
       el('span', {}, label), el('strong', {}, value), note ? el('span', { class: 'hint' }, note) : null);
-    const approx = est.exact ? '' : '≈ ';
+    const fromReading = v.basis === 'a reading from the controller';
+    const approx = fromReading || est.exactMpy ? '' : '≈ ';
     const numbers = el('section', { class: 'card heap-card' },
-      el('h2', {}, 'Estimated heap use'),
+      el('h2', {}, 'Heap after startup'),
       bar,
       el('div', { class: 'heap-legend hint' },
         el('span', {}, el('i', { class: 'sw firmware' }), 'Firmware'),
         el('span', {}, el('i', { class: `sw program ${lv.cls}` }), 'This sequence'),
         el('span', {}, `of ${fmtBytes(HEAP.total)}`)),
       row('Firmware baseline', fmtBytes(HEAP.baseline), 'measured, empty sequence'),
-      est.model != null
-        ? row(`Model (${analysis.modelPoints} point${analysis.modelPoints === 1 ? '' : 's'})`, fmtBytes(est.model), `measured, ${HEAP.modelPerPoint} bytes a point`)
-        : null,
-      row('Program', `${approx}${fmtBytes(est.program)}`, est.exact
-        ? 'compiled code, names and constants from the 75F compiler'
-        : est.fromPython ? 'estimated from the generated code' : 'rough: about 11 bytes a block'),
-      est.runtime ? row('Running it', `≈ ${fmtBytes(est.runtime)}`, 'variable values, globals table, function bookkeeping') : null,
-      row('Sequence total', `≈ ${fmtBytes(est.total)}`, `of about ${fmtBytes(HEAP.budget)} left by the firmware`),
+      est.mpyBytes ? row('.mpy size', `${est.exactMpy ? '' : '≈ '}${fmtBytes(est.mpyBytes)}`, est.exactMpy
+        ? (est.exact ? 'from the 75F compiler' : 'from the Sequencer\'s last build')
+        : 'predicted from the generated code (within ~2% of the 1.22 compiler on 14 test programs)') : null,
+      row('True size', `${approx}${fmtBytes(trueSize)}`, fromReading ? 'measured: used after startup, minus the baseline' : est.mpyBytes ? '1.3 × .mpy − 780 (fits the measured sequences within 1.5%)' : 'rough, from the block count'),
+      row('Free after startup', `${approx}${fmtBytes(HEAP.budget - trueSize)}`, `of ${fmtBytes(HEAP.budget)} left by the firmware`),
+      row('Largest free piece after startup', `${approx}${fmtBytes(v.maxFree)}`, `${Math.round(v.maxFree / HEAP.gcBlock)} blocks; getting full below 220, likely too big below 125`),
+      est.modelPoints != null ? row('Model points', String(est.modelPoints)) : null,
       est.largest ? row('Largest function', `${est.largest.exact ? '' : '≈ '}${fmtBytes(est.largest.bytes)}`, `${est.largest.name}${est.largest.exact ? ', compiled' : ''}`) : null,
-      est.garbage ? row('Temporary data per run', `≈ ${fmtBytes(est.garbage.perRun)}`, `runs every ${est.garbage.runRate} s (rough)`) : null,
       analysis ? row('Variables · functions', `${analysis.variables} · ${analysis.functions}`) : null,
       row('Blocks on canvas', String(est.blocks)),
       !est.fromPython ? el('p', { class: 'note' }, src.reason || 'Generated code not available.') : null,
@@ -156,7 +156,7 @@ export function createHeapView(root, { loadSource, build, onError }) {
       const max = Math.max(...items.map((p) => p.bytes), 1);
       where = el('section', { class: 'card heap-card' },
         el('h2', {}, 'Where the program space goes'),
-        el('p', { class: 'hint' }, est.exact ? 'Compiled code per function, from the 75F compiler.' : 'Estimated. The model is counted separately.'),
+        el('p', { class: 'hint' }, est.exact ? 'Compiled code per function, from the 75F compiler.' : 'Estimated code per function. Model register set-up is inside runStartup.'),
         items.map((p) => el('div', { class: 'heap-part' },
           el('div', { class: 'heap-part-label' }, el('span', {}, p.name), el('span', { class: 'hint' }, `${approx}${fmtBytes(p.bytes)}`)),
           el('div', { class: 'heap-part-bar' }, el('span', { style: `width:${(p.bytes / max) * 100}%` })))));
@@ -245,7 +245,7 @@ export function createHeapView(root, { loadSource, build, onError }) {
 
     return el('section', { class: 'card heap-card' },
       el('h2', {}, 'Add a reading from the controller'),
-      el('p', { class: 'hint', id: 'gcHelp' }, `Push this canvas, then paste the GC lines from right after the push and from a minute or two later, all together, and say whether it ran. The lowest "used" is kept as the sequence's real size. Readings are kept for this sequence${seq?.name ? ` (${seq.name})` : ''} only, in this browser.`),
+      el('p', { class: 'hint', id: 'gcHelp' }, `Push this canvas, then paste the GC lines from right after startup and from the end of a run, all together, and say whether it ran. The lowest "used" is kept as the true size; the highest shows one run's temporary data, which isn't a limit. Readings are kept for this sequence${seq?.name ? ` (${seq.name})` : ''} only, in this browser.`),
       ta,
       el('div', { class: 'heap-outcome', role: 'radiogroup', 'aria-label': 'Did it run?' },
         el('label', { class: 'radio' }, ran, el('span', {}, 'It ran')),

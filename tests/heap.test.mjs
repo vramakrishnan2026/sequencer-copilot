@@ -7,39 +7,64 @@ test('a generated call costs about 15 bytes (measured 14.5 to 15.3)', () => {
   assert.ok(bytes >= 14 && bytes <= 16.5, `got ${bytes}`);
 });
 
-test('verdict bands: small fits, boiler-sized is getting full, over the limit is too big', async () => {
-  const { verdict } = await import('../extension/src/heap/estimate.js');
-  assert.equal(verdict({ total: 853, blocks: 55, fromPython: true }).level, 'fits');
-  assert.equal(verdict({ total: 7400, blocks: 942, fromPython: true }).level, 'tight');
-  assert.equal(verdict({ total: 9000, blocks: 1043, fromPython: true }).level, 'too-large');
+test('true size from .mpy matches the measured sequences within 1.5%', async () => {
+  const { trueSizeFromMpy } = await import('../extension/src/heap/estimate.js');
+  for (const [mpy, measured] of [[1125, 688], [4338, 4800], [5215, 6064]]) {
+    const t = trueSizeFromMpy(mpy);
+    assert.ok(Math.abs(t - measured) / measured < 0.015, `${mpy}: ${t} vs ${measured}`);
+  }
+});
+
+test('largest free piece after startup matches the measured blocks (within 10)', async () => {
+  const { trueSizeFromMpy, maxFreeAfterStartup } = await import('../extension/src/heap/estimate.js');
+  for (const [mpy, blocks] of [[1125, 534], [4338, 254], [5215, 156]]) {
+    const b = maxFreeAfterStartup(trueSizeFromMpy(mpy)) / 16;
+    assert.ok(Math.abs(b - blocks) <= 10, `${mpy}: ${b} vs ${blocks}`);
+  }
+});
+
+test('verdicts: 55-block and rebuild fit, size-reduced boiler is getting full, bigger is too big', async () => {
+  const { estimate } = await import('../extension/src/heap/estimate.js');
+  const v = (mpySize, blocks) => estimate({ python: null, mpySize, blocks, sequence: { key: 'k' } }).verdict.level;
+  assert.equal(v(1125, 55), 'fits');
+  assert.equal(v(4338, 787), 'fits');
+  assert.equal(v(5215, 942), 'tight');
+  assert.equal(v(5800, 1043), 'too-large');
 });
 
 test("readings from other sequences don't change a sequence's verdict", async () => {
   const { estimate } = await import('../extension/src/heap/estimate.js');
-  const other = { sequence: { key: '/seq/boiler' }, outcome: 'failed', blocks: 55, gc: { used: 11000, maxBlk: 85 } };
-  const r = estimate({ python: null, blocks: 55, sequence: { key: '/seq/test' } }, [other]);
+  const other = { sequence: { key: '/seq/boiler' }, outcome: 'failed', blocks: 55, gc: { used: 11000, maxFree: 5 } };
+  const r = estimate({ python: null, mpySize: 1125, blocks: 55, sequence: { key: '/seq/test' } }, [other]);
   assert.equal(r.own.length, 0);
   assert.equal(r.verdict.level, 'fits');
 });
 
-test("a sequence's own reading: failed means too big; ran keeps it below too big and its max blk counts", async () => {
-  const { verdict } = await import('../extension/src/heap/estimate.js');
-  const failed = [{ outcome: 'failed', blocks: 500, gc: { used: 9000 } }];
-  assert.equal(verdict({ total: 4000, blocks: 500, fromPython: true }, failed).level, 'too-large');
-  const ran = [{ outcome: 'ran', blocks: 787, gc: { used: 11456, maxBlk: 120 } }];
-  const v = verdict({ total: 4000, blocks: 787, fromPython: true, largest: { name: 'runContinuous', bytes: 1950 } }, ran);
-  // Its own max blk (1,920) covers a 1,950-byte function, so no "very large" warning...
-  assert.equal(v.plain.length, 0);
-  // ...but its own reading (94% used) outranks the low estimate: getting full, not "too big", since it ran.
-  assert.equal(v.level, 'tight');
-  assert.equal(v.basis, 'a reading from the controller');
+test("a sequence's own reading wins: failed means too big; a reading's numbers replace the prediction", async () => {
+  const { estimate } = await import('../extension/src/heap/estimate.js');
+  const key = { key: '/seq/x' };
+  const failed = [{ sequence: key, outcome: 'failed', blocks: 500, gc: { used: 6000, maxFree: 300 } }];
+  assert.equal(estimate({ python: null, mpySize: 2000, blocks: 500, sequence: key }, failed).verdict.level, 'too-large');
+  const ran = [{ sequence: key, outcome: 'ran', blocks: 942, gc: { used: 8704, maxFree: 156 } }];
+  const r = estimate({ python: null, mpySize: 3000, blocks: 942, sequence: key }, ran);
+  assert.equal(r.verdict.trueSize, 6064);
+  assert.equal(r.verdict.level, 'tight');
+  assert.equal(r.verdict.basis, 'a reading from the controller');
 });
 
-test('model points are counted at the measured 29 bytes each', () => {
+test('predicted .mpy size is within 3% of mpy-cross 1.22 on a real 75F program', async () => {
+  const { analyzePython } = await import('../extension/src/heap/estimate.js');
+  const fs = await import('node:fs');
+  const py = fs.readFileSync(new URL('./fixtures/small.py', import.meta.url), 'utf8');
+  const est = analyzePython(py).mpyEst;
+  assert.ok(Math.abs(est - 641) / 641 < 0.03, `${est} vs 641`);
+});
+
+test('model points are counted (their set-up is part of the .mpy size)', () => {
   const pts = Array.from({ length: 32 }, (_, i) => `  connmod.ConfigureCustomDatatypeModbusRegister(1,1,${40001 + 2 * i})\n  connmod.WriteDataTypeRegister(1,1,${40001 + 2 * i},0)`).join('\n');
   const r = estimate({ python: `import connmod\n\ndef runStartup():\n${pts}\n\nrunStartup()\n`, blocks: 6 });
   assert.equal(r.analysis.modelPoints, 32);
-  assert.equal(r.est.model, 928);
+  assert.equal(r.est.modelPoints, 32);
 });
 
 test('parses the controller GC lines', () => {

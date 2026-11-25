@@ -1,4 +1,4 @@
-# 75F Sequencer Copilot (Chrome MV3), v0.9.5
+# 75F Sequencer Copilot (Chrome MV3), v0.9.6
 
 Made by Vinay.
 
@@ -29,30 +29,23 @@ the panel explains why and **Copy message for your assistant** gives you the exa
 ## Memory check
 
 **Memory** (main screen) says whether the sequence fits the Connect Module's MicroPython heap (11,968 bytes; the
-firmware takes 2,640, leaving about 9,330 for a sequence), in plain words first:
+firmware takes 2,640, leaving 9,328 for a sequence), in plain words first: **Fits comfortably / Getting full /
+Likely too big**, a gauge, up to three things to do, and **Check with the 75F compiler (more accurate)**.
+**Show details** opens the technical view and the controller readings.
 
-- **Fits comfortably / Getting full / Likely too big**, with a gauge of how much of the sequence memory it uses
-  (getting full from 75%, likely too big from 94%: the boiler ran pinned at ~90% and its 10% bigger original failed);
-- a note when it runs so often that temporary data fills the free memory within a minute (a slower run rate helps);
-- up to three things to do, in plain words;
-- **Check with the 75F compiler (more accurate)**: compiles the canvas from inside the Sequencer page with the
-  current sign-in (the token never leaves the page) and replaces the estimate with real compiled sizes.
+The verdict rests on two figures, from measurements on the controller (25 Nov, .mpy format 6.2, MicroPython 1.22):
 
-**Show details** opens the technical view: how the verdict was reached, the byte breakdown (model at a measured
-29 bytes a point; program; the cost of running it: variable values, the globals table, function bookkeeping),
-size per function, the detailed ways to cut, and **Add a reading from the controller**.
+- **True size**, the heap used after startup above the baseline: **1.3 × .mpy bytes − 780** (within 1.5% on the
+  55-, 787- and 942-block sequences). The .mpy size comes from, in order: the 75F compiler button; the .mpy the
+  Sequencer's own build returned (caught automatically when you build); or a prediction from the generated code
+  (within ~2% of mpy-cross 1.22 on 14 test programs from 550 B to 11 KB).
+- **Largest free piece after startup**: free − (100 + 1.7×10⁻⁵ × true²), fitted to 576 / 534 / 254 / 156 blocks.
+  Getting full below 220 blocks, likely too big below 125 (working sequences had 254 and 156; the failing
+  1,043-block original showed 80 and 55).
 
-The code comes from the Sequencer itself: the extension notes the Sequencer's own Python generator when it runs,
-and keeps the Python the Sequencer sends to its compiler when it builds (read-only). After a page load, build once
-in the Sequencer; from then on it generates code for the live canvas.
-
-Readings: paste several GC lines (right after the push and a minute or two later). The lowest "used" is kept,
-because temporary data builds up between clean-ups (measured swings of ~7 KB at a 1 s run rate). Each reading is
-tied to its sequence and size and used only for that sequence: a "failed" reading at the same size makes the
-verdict "likely too big"; a higher "ran" reading outranks a lower estimate.
-
-Checked against the controller: a small sequence measured 624 bytes above baseline, estimated 636 from its
-compiled code.
+Temporary data from each run (garbage) isn't counted: the controller collects it when the heap fills and carries
+on. A reading of this sequence at its current size replaces the prediction (lowest "used" = true size); a "failed"
+reading makes it "likely too big". Readings are tied to their sequence.
 
 ## Logic map
 
