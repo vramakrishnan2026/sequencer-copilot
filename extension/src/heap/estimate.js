@@ -116,6 +116,19 @@ export function analyzePython(code) {
     cur.lines.push(raw);
   }
 
+  // Statements at module level before the superloop come from loose blocks on the canvas: they
+  // compile into the program (and run once at load) without being part of the sequence.
+  const loose = [];
+  let inSuperloop = false;
+  for (const raw of sections[0].lines) {
+    const t = raw.replace(/#.*$/, '').trim();
+    if (/^#+\s*Superloop/i.test(raw.trim())) inSuperloop = true;
+    if (inSuperloop || !t || /^(import|from)\s/.test(t) || /^[A-Za-z_]\w*\s*=\s*None$/.test(t)) continue;
+    if (/^(runStartup|runContinuous)\(\)$/.test(t) || /^(while|for)\s/.test(t)) { inSuperloop = true; continue; }
+    if (/^\s/.test(raw)) continue;
+    loose.push(t);
+  }
+
   const declared = new Set();
   for (const l of sections[0].lines) {
     const m = l.match(/^([A-Za-z_]\w*)\s*=\s*None\s*$/);
@@ -179,6 +192,8 @@ export function analyzePython(code) {
     program,
     names: qstrBytes,
     largest: largest ? { name: largest.name, bytes: largest.bytes } : null,
+    loose,
+    defOrder: functions.map((s) => s.name),
   };
 }
 
@@ -258,9 +273,9 @@ export function verdict(est, readings = []) {
   if (est.largest) {
     if (est.largest.bytes > HEAP.largestRan) {
       if (level === 'fits') level = 'tight';
-      reasons.push(`Largest function (${est.largest.name}): about ${fmtBytes(est.largest.bytes)}, bigger than any function seen running (${fmtBytes(HEAP.largestRan)}). It needs one unbroken piece of heap when the program loads.`);
+      reasons.push(`Largest function (${est.largest.name}): ${est.largest.exact ? '' : 'about '}${fmtBytes(est.largest.bytes)}, bigger than any function seen running (${fmtBytes(HEAP.largestRan)}). It needs one unbroken piece of heap when the program loads.`);
     } else {
-      reasons.push(`Largest function (${est.largest.name}): about ${fmtBytes(est.largest.bytes)}, within what has run (up to ${fmtBytes(HEAP.largestRan)}).`);
+      reasons.push(`Largest function (${est.largest.name}): ${est.largest.exact ? '' : 'about '}${fmtBytes(est.largest.bytes)}, within what has run (up to ${fmtBytes(HEAP.largestRan)}).`);
     }
   }
 
@@ -362,7 +377,18 @@ export function suggestions(analysis) {
     }
   }
 
-  // 4. A very large function.
+  // 4. Loose blocks on the canvas.
+  if (analysis.loose?.length) {
+    const n = analysis.loose.length;
+    const shown = analysis.loose.slice(0, 4).map((t) => (t.length > 24 ? `${t.slice(0, 24)}…` : t)).join(', ');
+    out.push({
+      kind: 'loose',
+      saving: analysis.loose.reduce((sum, t) => sum + lineCost(t).bytes, 0),
+      text: `${n} loose block${n > 1 ? 's' : ''} on the canvas, outside Startup, Continuous and functions (${shown}). ${n > 1 ? 'They still compile' : 'It still compiles'} into the program and ${n > 1 ? 'run' : 'runs'} once at load. Delete ${n > 1 ? 'them' : 'it'}.`,
+    });
+  }
+
+  // 5. A very large function.
   if (analysis.largest && analysis.largest.bytes > HEAP.largestRan * 0.8) {
     out.push({
       kind: 'split',
@@ -371,6 +397,63 @@ export function suggestions(analysis) {
     });
   }
   return out.sort((a, b) => b.saving - a.saving);
+}
+
+// ------------------------------------------------------------------------------ real .mpy build
+
+/**
+ * Reads a MicroPython .mpy file (version 6) as returned by 75F's py-to-mpy service: the names
+ * table and the compiled code of the module and each function. Function code comes in the order
+ * the functions are defined, so defOrder (from the Python) names them.
+ */
+export function parseMpy(bytes, defOrder = []) {
+  const u = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  if (u[0] !== 0x4d) throw new Error('Not a .mpy file.');
+  if (u[1] !== 6) throw new Error(`.mpy version ${u[1]} isn't supported (expected 6).`);
+  let p = 4;
+  const uint = () => {
+    let v = 0;
+    let c;
+    do { c = u[p++]; v = (v * 128) + (c & 0x7f); } while (c & 0x80 && p < u.length);
+    return v;
+  };
+  const nQstr = uint();
+  const nObj = uint();
+  const names = [];
+  for (let i = 0; i < nQstr; i++) {
+    const l = uint();
+    if (l & 1) continue; // a name already built into MicroPython
+    const n = l >> 1;
+    names.push(new TextDecoder().decode(u.slice(p, p + n)));
+    p += n + 1;
+  }
+  const namesEnd = p;
+  // Constant objects (floats, long strings) come next; their sizes vary, so stop if present.
+  if (nObj) {
+    return { total: u.length, version: u[1], names, namesBytes: namesEnd, objects: nObj, module: null, functions: [], code: null };
+  }
+  const rawCode = () => {
+    const kl = uint();
+    const len = Math.floor(kl / 8);
+    const hasChildren = (kl >> 2) & 1;
+    p += len;
+    const children = [];
+    if (hasChildren) {
+      const n = uint();
+      for (let i = 0; i < n; i++) children.push(rawCode());
+    }
+    return { len, children };
+  };
+  const root = rawCode();
+  const functions = root.children.map((c, i) => ({ name: defOrder[i] || `function ${i + 1}`, bytes: c.len }));
+  const code = root.len + functions.reduce((n, f) => n + f.bytes, 0);
+  return { total: u.length, version: u[1], names, namesBytes: namesEnd, objects: 0, module: root.len, functions, code };
+}
+
+/** The superloop the Sequencer appends when it builds, if the generated code doesn't have it. */
+export function withSuperloop(python, intervalMs = 1000) {
+  if (/#+\s*Superloop Section/i.test(python) || /^while True:/m.test(python)) return python;
+  return `${python.trimEnd()}\n\n######## Superloop Section ########\nconnmod.EnterSequence()\nrunStartup()\nconnmod.ExitSequence()\nwhile True:\n  connmod.DelayMs(${intervalMs})\n  connmod.EnterSequence()\n  runContinuous()\n  connmod.ExitSequence()\n`;
 }
 
 // ------------------------------------------------------------------------------------- helpers
@@ -384,18 +467,31 @@ export function fmtBytes(n) {
  * Whole estimate. src: { python, blocks, stacks } from the page; readings: stored readings.
  * Without the generated Python it falls back to ~12 bytes per block (measured range 9 to 16).
  */
-export function estimate(src, readings = []) {
+export function estimate(src, readings = [], mpy = null) {
   const blocks = src.blocks ?? 0;
   if (src.python) {
     const a = analyzePython(src.python);
     const { k, n } = scaleFrom(readings);
     const model = a.modelPoints * HEAP.modelPerPoint;
-    const program = a.program * k;
-    const largest = a.largest ? { name: a.largest.name, bytes: a.largest.bytes * k, raw: a.largest.bytes } : null;
-    const est = { total: model + program, totalRaw: model + a.program, model, program, largest, blocks, fromPython: true, scale: k, scaleReadings: n };
+    let program = a.program * k;
+    let largest = a.largest ? { name: a.largest.name, bytes: a.largest.bytes * k, raw: a.largest.bytes } : null;
+    let exact = null;
+    if (mpy?.code != null) {
+      // Real compiled sizes: code per function, plus the names and function objects the
+      // estimate can't see in the file. The model's calls are inside runStartup's code, so
+      // take them out there and count the model at its measured cost.
+      const modelCode = a.modelPoints * 2 * 15;
+      const fnObjects = mpy.functions.length * 16;
+      program = Math.max(0, mpy.code - modelCode) + fnObjects + a.names;
+      const big = mpy.functions.reduce((x, f) => (!x || f.bytes > x.bytes ? f : x), null);
+      largest = big ? { name: big.name, bytes: big.bytes, exact: true } : largest;
+      exact = mpy;
+    }
+    const est = { total: model + program, totalRaw: model + (exact ? program : a.program), model, program, largest, blocks,
+      fromPython: true, scale: exact ? 1 : k, scaleReadings: exact ? 0 : n, exact };
     return { est, analysis: a, verdict: verdict(est, readings), suggestions: suggestions(a) };
   }
   const total = blocks * 12;
-  const est = { total, model: null, program: total, largest: null, blocks, fromPython: false, scale: 1, scaleReadings: 0 };
+  const est = { total, model: null, program: total, largest: null, blocks, fromPython: false, scale: 1, scaleReadings: 0, exact: null };
   return { est, analysis: null, verdict: verdict(est, readings), suggestions: [] };
 }

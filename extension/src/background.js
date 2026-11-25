@@ -58,6 +58,7 @@ const HANDLERS = {
   logicMap: onCanvas('logicMap'),
   simulatorModel: onCanvas('simulatorModel'),
   heapSource: onCanvas('heapSource'),
+  mpyBuild: onCanvas('mpyBuild', (m) => ({ python: m.python })),
   diagnoseModelPoints: onCanvas('diagnoseModelPoints'),
   validate: onCanvas('validate', (m) => ({ actions: m.actions })),
   preview: onCanvas('preview', (m) => ({ actions: m.actions })),

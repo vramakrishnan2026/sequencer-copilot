@@ -26,3 +26,13 @@ test('parses the controller GC lines', () => {
   const gc = parseGcLine('GC: total: 11968, used: 2640, free: 9328\n No. of 1-blocks: 28, 2-blocks: 2, max blk sz: 50, max free sz: 576');
   assert.deepEqual(gc, { total: 11968, used: 2640, free: 9328, oneBlocks: 28, twoBlocks: 2, maxBlk: 50, maxFree: 576 });
 });
+
+test('reads a real .mpy from the 75F compiler (641 bytes, two functions)', async () => {
+  const { parseMpy } = await import('../extension/src/heap/estimate.js');
+  const fs = await import('node:fs');
+  const bytes = fs.readFileSync(new URL('./fixtures/small.mpy', import.meta.url));
+  const m = parseMpy(new Uint8Array(bytes), ['runStartup', 'runContinuous']);
+  assert.equal(m.total, 641);
+  assert.equal(m.module, 103);
+  assert.deepEqual(m.functions, [{ name: 'runStartup', bytes: 77 }, { name: 'runContinuous', bytes: 119 }]);
+});

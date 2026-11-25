@@ -67,17 +67,14 @@ updates automatically.
   - Host permission:
     > The extension works only with the 75F Site Sequencer, a web tool hosted on 75f.io (internal.75f.io and
     > altius.75f.io). It reads the open sequence from the Sequencer's Blockly editor to export it, preview changes,
-    > draw logic maps and run the simulator, and applies plans the user has reviewed and approved. It does not run
-    > on any other site.
-  - Optional host permission (`https://*.workers.dev/*`):
-    > Optional and off by default. If the user enters the address of their own Cloudflare Worker in Settings, Chrome
-    > asks them to allow that one address. The memory check then sends the Python generated from the open sequence
-    > to it, only when the user clicks "Get exact .mpy size", and shows the size of the compiled MicroPython file.
-    > No other data is sent, and nothing is sent to any address the user didn't enter.
+    > draw logic maps and run the simulator, and applies plans the user has reviewed and approved. When the user
+    > clicks "Get exact sizes" in the memory check, the Sequencer page sends the generated code to 75F's own
+    > py-to-mpy compiler, as the Sequencer does when it builds. It does not run on any other site.
 - **Remote code**: choose "No, I am not using remote code". Everything, including the Mermaid diagram library, is inside the package.
 - **Data usage**: tick **Website content** only. The extension reads the Site Sequencer page's content (the open
-  sequence) on this computer, at the person's request. By default it sends nothing to any server; the optional
-  exact size check sends the generated Python only to the user's own Worker address, at their click. Ticking
+  sequence) on this computer, at the person's request. By default it sends nothing to any server; the memory check's
+  "Get exact sizes" button sends the generated Python to 75F's own py-to-mpy compiler (the service the Sequencer
+  already uses), from the Sequencer page, only when clicked. Ticking
   Website content is the safer reading of "collect", and it matches the privacy statement.
 - Tick the three certifications (no selling, no unrelated use, no creditworthiness use).
 - **Privacy policy**: the public link to `PRIVACY.md` from setup step 3.

@@ -9,7 +9,7 @@ const { id: windowId } = await chrome.windows.getCurrent();
 const VERSION = chrome.runtime.getManifest().version;
 
 // Kept between sessions. mode: 'new' | 'edit'; assistant: 'chatgpt' | 'antigravity' | 'claude' | 'copilot' | 'other'.
-const DEFAULTS = { mode: 'new', assistant: 'chatgpt', showTypes: true, setupDone: false, lastDownload: null, mpyService: '' };
+const DEFAULTS = { mode: 'new', assistant: 'chatgpt', showTypes: true, setupDone: false, lastDownload: null };
 const settings = { ...DEFAULTS, ...((await chrome.storage.local.get('settings')).settings || {}) };
 const saveSettings = (patch) => { Object.assign(settings, patch); return chrome.storage.local.set({ settings }); };
 
@@ -276,7 +276,7 @@ $('openHeap').addEventListener('click', async () => {
   if (!heap) {
     heap = createHeapView($('heapRoot'), {
       loadSource: () => bg('heapSource'),
-      getService: () => settings.mpyService,
+      build: (python) => bg('mpyBuild', { python }),
       onError: (err) => {
         $('heapSub').textContent = /Unknown method/.test(err.message)
           ? 'Reload the Sequencer tab once so the update reaches it, then try again.'
@@ -645,7 +645,6 @@ async function renderSettings() {
   document.querySelectorAll('input[name=assistant]').forEach((r) => { r.checked = r.value === settings.assistant; });
   renderSetupSteps();
   $('showTypes').checked = settings.showTypes;
-  $('mpyService').value = settings.mpyService || '';
   $('setupSub').textContent = state.guideVersion
     ? `Guide version ${state.guideVersion}. Do this once, and again when the guide changes.`
     : 'Do this once, and again when the guide changes.';
@@ -665,24 +664,6 @@ document.querySelectorAll('input[name=assistant]').forEach((r) => r.addEventList
 }));
 
 $('showTypes').addEventListener('change', (e) => saveSettings({ showTypes: e.target.checked }));
-// The size service is optional: Chrome asks the person to allow that one address when they save it.
-$('saveService').addEventListener('click', async () => {
-  const msg = $('serviceMsg');
-  const raw = $('mpyService').value.trim();
-  if (!raw) {
-    await saveSettings({ mpyService: '' });
-    msg.textContent = 'Cleared. Nothing leaves this browser.';
-    return;
-  }
-  let url;
-  try { url = new URL(raw); } catch { msg.textContent = 'That isn\'t a web address.'; return; }
-  if (url.protocol !== 'https:') { msg.textContent = 'Use an https:// address.'; return; }
-  if (!url.hostname.endsWith('.workers.dev')) { msg.textContent = 'Use the Worker\'s workers.dev address (the extension only asks for permission to reach *.workers.dev).'; return; }
-  const granted = await chrome.permissions.request({ origins: [`${url.origin}/*`] }).catch(() => false);
-  if (!granted) { msg.textContent = 'Chrome didn\'t allow that address, so it wasn\'t saved.'; return; }
-  await saveSettings({ mpyService: url.href });
-  msg.textContent = `Saved. The memory check can now ask ${url.host} for the exact size.`;
-});
 
 $('copyDiagnostics').addEventListener('click', async () => {
   try {

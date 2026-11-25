@@ -1,4 +1,4 @@
-import { HEAP, estimate, fmtBytes, parseGcLine } from './estimate.js';
+import { HEAP, estimate, fmtBytes, parseGcLine, parseMpy, withSuperloop } from './estimate.js';
 
 /**
  * Memory check view: estimate, verdict, where the space goes, ways to cut, and calibration
@@ -31,15 +31,17 @@ async function loadReadings() {
 }
 const saveReadings = (list) => chrome.storage.local.set({ [READINGS_KEY]: list });
 
-export function createHeapView(root, { loadSource, getService, onError }) {
-  let last = null; // { src, result }
+export function createHeapView(root, { loadSource, build, onError }) {
+  let last = null; // { src, result, readings, mpy }
 
   async function load() {
     root.replaceChildren(el('p', { class: 'hint pad' }, 'Reading the canvas…'));
     try {
       const [src, readings] = await Promise.all([loadSource(), loadReadings()]);
+      // The Sequencer adds its superloop when it builds; include it so the sizes match.
+      if (src.python) src.python = withSuperloop(src.python);
       const result = estimate(src, readings);
-      last = { src, result, readings };
+      last = { src, result, readings, mpy: null };
       render();
       return true;
     } catch (err) {
@@ -78,30 +80,34 @@ export function createHeapView(root, { loadSource, getService, onError }) {
         el('span', {}, `of ${fmtBytes(HEAP.total)}`)),
       row('Firmware baseline', fmtBytes(HEAP.baseline), 'measured, empty sequence'),
       est.model != null
-        ? row(`Model (${analysis.modelPoints} points)`, fmtBytes(est.model), `measured, ${HEAP.modelPerPoint} bytes a point`)
+        ? row(`Model (${analysis.modelPoints} point${analysis.modelPoints === 1 ? '' : 's'})`, fmtBytes(est.model), `measured, ${HEAP.modelPerPoint} bytes a point`)
         : null,
-      row('Program', `≈ ${fmtBytes(est.program)}`, est.fromPython
-        ? (est.scaleReadings ? `scaled ×${est.scale.toFixed(2)} from ${est.scaleReadings} reading${est.scaleReadings > 1 ? 's' : ''}` : 'estimated from the generated Python')
-        : 'rough: about 12 bytes a block'),
+      row('Program', `${est.exact ? '' : '≈ '}${fmtBytes(est.program)}`, est.exact
+        ? 'compiled code from the 75F compiler, plus names'
+        : est.fromPython
+          ? (est.scaleReadings ? `scaled ×${est.scale.toFixed(2)} from ${est.scaleReadings} reading${est.scaleReadings > 1 ? 's' : ''}` : 'estimated from the generated Python')
+          : 'rough: about 12 bytes a block'),
       row('Sequence total', `≈ ${fmtBytes(est.total)}`, `of about ${fmtBytes(HEAP.budget)} left by the firmware`),
-      est.largest ? row('Largest function', `≈ ${fmtBytes(est.largest.bytes)}`, est.largest.name) : null,
+      est.largest ? row('Largest function', `${est.largest.exact ? '' : '≈ '}${fmtBytes(est.largest.bytes)}`, `${est.largest.name}${est.largest.exact ? ', compiled' : ''}`) : null,
       analysis ? row('Variables · functions', `${analysis.variables} · ${analysis.functions}`) : null,
       row('Blocks on canvas', String(est.blocks)),
       !est.fromPython ? el('p', { class: 'note' }, src.reason || 'Generated Python not available.') : null);
 
     let where = null;
     if (analysis) {
-      const parts = analysis.sections
-        .map((s) => ({ name: s.name === '(module)' ? 'Module setup and superloop' : s.name, bytes: (s.bytes + s.data) * est.scale }))
+      const label = (n) => (n === '(module)' ? 'Module setup and superloop' : n);
+      const parts = (est.exact
+        ? [{ name: label('(module)'), bytes: est.exact.module }, ...est.exact.functions]
+        : analysis.sections.map((s) => ({ name: label(s.name), bytes: (s.bytes + s.data) * est.scale })))
         .concat(analysis.names ? [{ name: 'Names (variables and functions)', bytes: analysis.names * est.scale }] : [])
         .sort((a, b) => b.bytes - a.bytes)
         .slice(0, 8);
       const max = Math.max(...parts.map((p) => p.bytes), 1);
       where = el('section', { class: 'card heap-card' },
         el('h2', {}, 'Where the program space goes'),
-        el('p', { class: 'hint' }, 'Model points are counted above, not here.'),
+        el('p', { class: 'hint' }, est.exact ? 'Compiled code per function, from the 75F compiler.' : 'Estimated. Model points are counted above, not here.'),
         parts.map((p) => el('div', { class: 'heap-part' },
-          el('div', { class: 'heap-part-label' }, el('span', {}, p.name), el('span', { class: 'hint' }, `≈ ${fmtBytes(p.bytes)}`)),
+          el('div', { class: 'heap-part-label' }, el('span', {}, p.name), el('span', { class: 'hint' }, `${est.exact ? '' : '≈ '}${fmtBytes(p.bytes)}`)),
           el('div', { class: 'heap-part-bar' }, el('span', { style: `width:${(p.bytes / max) * 100}%` })))));
     }
 
@@ -115,28 +121,28 @@ export function createHeapView(root, { loadSource, getService, onError }) {
   }
 
   function exactCard() {
-    const url = getService();
-    if (!url || !last.src.python) return null;
-    const out = el('p', { class: 'hint' }, 'Sends the generated Python to your size service and shows the real .mpy size.');
-    const btn = el('button', { type: 'button' }, 'Get exact .mpy size');
+    if (!last.src.python) return null;
+    const out = el('p', { class: 'hint' }, last.mpy
+      ? `Built ${new Date(last.mpy.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}: .mpy file ${fmtBytes(last.mpy.total)} (code ${fmtBytes(last.mpy.code)}, names ${fmtBytes(last.mpy.namesBytes)}). The sizes above now use the compiled code.`
+      : 'Compiles this canvas with 75F\'s py-to-mpy service, the compiler the Sequencer itself uses, with your current sign-in. Nothing is saved there, and the result replaces the estimates above with real code sizes.');
+    const btn = el('button', { type: 'button' }, last.mpy ? 'Build again' : 'Get exact sizes from the 75F compiler');
     btn.addEventListener('click', async () => {
       btn.disabled = true;
-      out.textContent = 'Asking the service…';
+      out.textContent = 'Compiling…';
       try {
-        const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: last.src.python });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok || typeof body.bytes !== 'number') throw new Error(body.error || `The service answered ${res.status}.`);
-        last.mpyBytes = body.bytes;
-        out.textContent = `.mpy file: ${fmtBytes(body.bytes)}. The file size is not the same as heap use, but tracks it; it is saved with the next reading.`;
+        const res = await build(last.src.python);
+        const bytes = Uint8Array.from(atob(res.mpyBase64), (c) => c.charCodeAt(0));
+        const mpy = parseMpy(bytes, last.result.analysis?.defOrder || []);
+        if (mpy.code == null) throw new Error(`Compiled (.mpy ${fmtBytes(mpy.total)}), but it holds constant objects this version can't split by function yet.`);
+        last.mpy = { ...mpy, at: new Date().toISOString() };
+        last.result = estimate(last.src, last.readings, mpy);
+        render();
       } catch (err) {
-        out.textContent = /Failed to fetch/.test(err.message)
-          ? 'Could not reach the service. Check its address in Settings.'
-          : err.message;
-      } finally {
         btn.disabled = false;
+        out.textContent = /Unknown method/.test(err.message) ? 'Reload the Sequencer tab once so the update reaches it, then try again.' : err.message;
       }
     });
-    return el('section', { class: 'card heap-card' }, el('h2', {}, 'Exact size'), btn, out);
+    return el('section', { class: 'card heap-card' }, el('h2', {}, 'Exact sizes'), btn, out);
   }
 
   function calibrateCard(readings) {
@@ -158,7 +164,7 @@ export function createHeapView(root, { loadSource, getService, onError }) {
         total: a ? a.modelPoints * HEAP.modelPerPoint + a.program : null,
         largestEst: a?.largest?.bytes ?? null,
         largestName: a?.largest?.name ?? null,
-        mpyBytes: last.mpyBytes ?? null,
+        mpy: last.mpy ? { total: last.mpy.total, code: last.mpy.code, largest: last.result.est.largest?.bytes ?? null } : null,
         gc,
       };
       const list = [reading, ...(await loadReadings())].slice(0, 50);

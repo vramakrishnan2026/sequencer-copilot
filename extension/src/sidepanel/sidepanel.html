@@ -203,18 +203,6 @@
 
       <section class="card">
         <div class="section-head">
-          <h2>Exact .mpy size (optional)</h2>
-          <p class="hint">Address of your Cloudflare Worker (<code>https://….workers.dev</code>, see <code>worker/README.md</code> in the repo) that turns the generated Python into .mpy and returns its size. When set, the memory check offers <b>Get exact .mpy size</b>, which sends this canvas's Python there. Leave empty to keep everything in this browser.</p>
-        </div>
-        <label class="field"><span class="sr-only">Size service address</span>
-          <input id="mpyService" type="url" placeholder="https://mpy-size.example.workers.dev" autocomplete="off" spellcheck="false">
-        </label>
-        <div class="row"><button id="saveService" type="button" class="small">Save</button></div>
-        <p id="serviceMsg" class="hint" role="status"></p>
-      </section>
-
-      <section class="card">
-        <div class="section-head">
           <h2>Lessons to review</h2>
           <p class="hint" id="lessonsSummary"></p>
         </div>

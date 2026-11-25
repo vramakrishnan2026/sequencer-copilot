@@ -1,4 +1,4 @@
-# 75F Sequencer Copilot (Chrome MV3), v0.9.0
+# 75F Sequencer Copilot (Chrome MV3), v0.9.1
 
 Made by Vinay.
 
@@ -46,9 +46,12 @@ paste the controller's GC lines and say whether the sequence ran. Readings are k
 one load that ran and one that failed, the verdict switches to the byte estimate, and "max blk sz" readings
 rescale the estimate. If the generated Python can't be found, it falls back to about 12 bytes a block.
 
-**Exact .mpy size** (optional): deploy the Cloudflare Worker in `worker/` (repo), put its workers.dev address in
-**Settings**, and the memory check can send the generated Python there to get the real .mpy size. Only then does
-anything leave the browser, and only to that address.
+**Get exact sizes from the 75F compiler** compiles the canvas with 75F's py-to-mpy service (the compiler the
+Sequencer itself uses), from inside the Sequencer page with the person's current sign-in. The sign-in token stays in
+the page: it is used only for that request and never reaches the extension or its storage. The returned .mpy is read
+to get the real compiled size of the module and of each function, which then replace the estimates (the largest
+function is the figure that maps to "max blk sz"). Loose blocks lying on the canvas outside Startup, Continuous and
+functions are flagged too: they still compile into the program.
 
 ## Logic map
 

@@ -1707,6 +1707,65 @@
     return { python, reason, blocks: all.length, stacks, change: changeInfo() };
   }
 
+  // ----------------------------------------------------- real build (py-to-mpy)
+  // Compiles the code with 75F's own py-to-mpy service, the way the Sequencer does when it
+  // builds, using the session the person is already signed in with. The sign-in token is read
+  // from this page's storage and used only for this request to that service; it is never
+  // returned to the extension or stored.
+  const MPY_URL = 'https://micropython-edge-api.azurewebsites.net/micro-python/py-to-mpy';
+
+  function sessionToken() {
+    const now = Date.now() / 1000;
+    const found = [];
+    const scan = (text) => {
+      for (const m of String(text).matchAll(/eyJ[\w-]+\.eyJ[\w-]+\.[\w-]+/g)) {
+        try {
+          const body = JSON.parse(atob(m[0].split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+          if (body.iss === '75f' && (!body.exp || body.exp > now + 30)) found.push({ token: m[0], exp: body.exp || 0 });
+        } catch { /* not a token */ }
+      }
+    };
+    for (const store of [window.localStorage, window.sessionStorage]) {
+      try {
+        for (let i = 0; i < store.length; i++) scan(store.getItem(store.key(i)));
+      } catch { /* storage blocked */ }
+    }
+    try { scan(document.cookie); } catch { /* none */ }
+    found.sort((a, b) => b.exp - a.exp);
+    return found[0]?.token || null;
+  }
+
+  function toBytes(buf) {
+    const u = new Uint8Array(buf);
+    if (u[0] === 0x4d) return u; // the .mpy itself
+    const text = new TextDecoder().decode(u).trim().replace(/^"|"$/g, '');
+    if (/^[0-9a-f]+$/i.test(text) && text.length % 2 === 0) {
+      return Uint8Array.from(text.match(/../g), (h) => parseInt(h, 16));
+    }
+    if (/^[A-Za-z0-9+/=\s]+$/.test(text)) {
+      const bin = atob(text.replace(/\s/g, ''));
+      return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    }
+    throw new Error('The compiler answered with something other than a .mpy file.');
+  }
+
+  async function mpyBuild({ python }) {
+    if (typeof python !== 'string' || !python.trim()) throw new Error('No code to build.');
+    const token = sessionToken();
+    if (!token) throw new Error('Couldn\'t find your 75F sign-in in this page. Reload the Sequencer, sign in again if asked, and retry.');
+    const res = await fetch(MPY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/plain, */*', Authorization: `Bearer ${token}`, '75F-Application': 'INTERNAL' },
+      body: JSON.stringify({ snippet: python, outputFileName: '__user_code__' }),
+    });
+    if (res.status === 401 || res.status === 403) throw new Error('The 75F compiler refused the sign-in. Reload the Sequencer and sign in again.');
+    if (!res.ok) throw new Error(`The 75F compiler answered ${res.status}. If the code has an error, the Sequencer's own build will show it.`);
+    const bytes = toBytes(await res.arrayBuffer());
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return { mpyBase64: btoa(bin), bytes: bytes.length };
+  }
+
   // -------------------------------------------------------------- handlers
 
   const HANDLERS = {
@@ -1721,6 +1780,7 @@
     heapSource() {
       return heapSource();
     },
+    mpyBuild,
     getContext({ refreshCatalog } = {}) {
       const { B, ws } = env();
       if (refreshCatalog) catalogCache.clear();
