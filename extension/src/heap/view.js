@@ -287,5 +287,16 @@ export function createHeapView(root, { loadSource, build, readingsOn = () => fal
         [...groups].flatMap(([name, list]) => [el('h3', { class: 'heap-sub' }, name), el('ul', { class: 'heap-readings' }, list.map(item))])) : null);
   }
 
-  return { load };
+  // The canvas this result was worked out for ({ canvasId, changeSeq }), or null.
+  function shownFor() { return last?.src?.change ?? null; }
+
+  // Takes the result away (the canvas changed or another sequence is open) and offers to check again.
+  function clear(message, onCheck) {
+    last = null;
+    root.replaceChildren(el('section', { class: 'card heap-card heap-stale' },
+      el('p', {}, message),
+      el('button', { type: 'button', class: 'primary', onclick: onCheck }, 'Check memory again')));
+  }
+
+  return { load, shownFor, clear, hasResult: () => last != null };
 }

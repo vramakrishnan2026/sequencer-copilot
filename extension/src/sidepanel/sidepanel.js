@@ -1,6 +1,7 @@
 import { SKILL_NAME, SKILL_REFERENCE, buildAssistantInstructions, buildExport, buildSkillMd, friendlyError, loadGuide, parsePastedPlan, repairMessage } from './export.js';
 import { makeZip } from './zip.js';
 import { createHeapView } from '../heap/view.js';
+let heap = null; // the memory check view, made when first opened
 import { createSimulatorView } from '../simulator/view.js';
 import { addFindings, clearFindings, findingsMarkdown, loadFindings, parseFindings, removeFinding, stripFindings } from './findings.js';
 
@@ -164,6 +165,23 @@ async function refreshStatus() {
     $('statusText').textContent = /Open the 75F/.test(err.message) ? 'Open a Site Sequencer tab in this window to start.' : err.message;
   }
   renderMain();
+  retireStaleHeap();
+}
+
+// A memory result belongs to one canvas as it was. Once the canvas is edited, or another
+// sequence is open, take it away so nobody reads an old prediction as this canvas's.
+function retireStaleHeap() {
+  if (!heap?.hasResult()) return;
+  const was = heap.shownFor();
+  const now = state.change;
+  if (!was?.canvasId) return; // older bridge: nothing to compare
+  let why = null;
+  if (!now?.canvasId) why = 'The Sequencer tab isn\'t connected any more, so the memory check was cleared.';
+  else if (now.canvasId !== was.canvasId) why = 'Another sequence is open, so the memory check for the previous one was cleared.';
+  else if (now.changeSeq !== was.changeSeq) why = 'The canvas changed, so the memory check was cleared. Check again when you\'re ready.';
+  if (!why) return;
+  heap.clear(why, loadHeap);
+  $('heapSub').textContent = 'Will this sequence fit the controller\'s heap?';
 }
 chrome.tabs.onActivated.addListener(refreshStatus);
 // Edits on the canvas show up within a couple of seconds, without switching tabs.
@@ -261,7 +279,6 @@ $('closeSim').addEventListener('click', () => {
 });
 
 // ---- memory check
-let heap = null;
 async function loadHeap() {
   $('heapReload').disabled = true;
   $('heapSub').textContent = 'Reading the canvas…';
