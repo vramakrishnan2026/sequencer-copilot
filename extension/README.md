@@ -1,4 +1,4 @@
-# 75F Sequencer Copilot (Chrome MV3), v0.7.3
+# 75F Sequencer Copilot (Chrome MV3), v0.8.0
 
 Made by Vinay.
 
@@ -9,8 +9,17 @@ The extension makes no AI calls and needs no API key. A person copies content be
 Pick what you are doing at the top of the panel.
 
 - **New sequence**: describe it to your assistant (nothing to attach), then paste its answer.
-- **Edit this sequence**: click **Download this sequence** and attach the file with your request (or **Copy** and paste
-  it, for smaller sequences), then paste the answer.
+- **Edit this sequence**: click **Copy sequence**, paste it into your assistant with your request, then paste the
+  answer. For very long sequences, **Download it as a file** and attach that instead.
+
+Only one button is bright at a time: the next step. The panel watches the canvas for edits (not selecting, scrolling
+or zooming), so **Copy sequence** lights up whenever the canvas has changed since the last copy, including right
+after an apply. When nothing has changed it turns into a grey **Copy again**, which still works (for a new chat).
+After reloading the Sequencer page, the panel treats the canvas as changed.
+
+The newest answer always appears at the top of the panel, with **Apply to canvas** in its header; its changes
+scroll inside the card. Applied, cancelled and replaced answers fold into **Earlier answers**, newest first.
+Assistant setup sits at the bottom of the panel, since it is done once.
 
 **Review changes** checks the answer against the live canvas and lists each change in plain words, using the
 labels the editor shows ("set relay Relay 1 to On"), grouped by stack. **Apply to canvas** runs it as one
@@ -19,7 +28,7 @@ the panel explains why and **Copy message for your assistant** gives you the exa
 
 ## Logic map
 
-**View logic map** (main screen) opens a new tab with two views of the open sequence.
+**Logic map** (main screen) opens a new tab with two views of the open sequence.
 
 - **Flowchart** (default): the steps in running order. Each if / else if / else is a decision diamond with Yes and
   No branches; loops are diamonds with a return arrow. Neighbouring steps of the same kind share a box (readings and
@@ -39,7 +48,7 @@ The diagram is drawn with Mermaid 11 (MIT licence), bundled in `lib/`; nothing i
 
 ## Simulator
 
-**Simulate this sequence** (main screen) opens the simulator inside the side panel. It reads the canvas and runs the
+**Simulate** (main screen) opens the simulator inside the side panel. It reads the canvas and runs the
 blocks against virtual inputs, so the logic can be checked before it goes to a Connect module.
 
 - **Inputs** are found on the canvas: universal inputs, sensor and POR bus, Modbus and BACnet reads, model points.

@@ -114,6 +114,27 @@
       .sort((a, b) => b.getAllBlocks(false).length - a.getAllBlocks(false).length)[0] || null;
   }
 
+  // ----------------------------------------------------------- change watch
+  // Counts real edits to the canvas (not selecting, scrolling or zooming), so the panel can tell
+  // whether the sequence changed since it was last copied. canvasId changes when the page reloads
+  // or the editor swaps in a new workspace, so an old count is never mistaken for the current one.
+  const watch = { ws: null, canvasId: '', seq: 0, at: null };
+  function watchCanvas(ws) {
+    if (watch.ws === ws) return;
+    watch.ws = ws;
+    watch.canvasId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    watch.seq = 0;
+    watch.at = null;
+    try {
+      ws.addChangeListener((e) => {
+        if (!e || e.isUiEvent || e.type === 'ui' || e.type === 'finished_loading') return;
+        watch.seq += 1;
+        watch.at = new Date().toISOString();
+      });
+    } catch { /* an editor without change events: the panel falls back to block counts */ }
+  }
+  const changeInfo = () => ({ canvasId: watch.canvasId, changeSeq: watch.seq, changedAt: watch.at });
+
   function env() {
     if (cached && cached.ws.getParentSvg?.()?.isConnected !== false && !cached.ws.disposed) return cached;
     cached = null;
@@ -122,7 +143,11 @@
       .map((B) => ({ B, ws: getMainWorkspace(B) }))
       .filter((o) => o.ws)
       .sort((a, b) => b.ws.getAllBlocks(false).length - a.ws.getAllBlocks(false).length);
-    if (options.length) return (cached = options[0]);
+    if (options.length) {
+      cached = options[0];
+      watchCanvas(cached.ws);
+      return cached;
+    }
 
     const deepCount = (root) => {
       let n = root.querySelectorAll('.blocklySvg').length;
@@ -1619,7 +1644,7 @@
     status() {
       try {
         const { B, ws } = env();
-        return { ready: true, version: B.VERSION || 'unknown', blockCount: ws.getAllBlocks(false).length };
+        return { ready: true, version: B.VERSION || 'unknown', blockCount: ws.getAllBlocks(false).length, ...changeInfo() };
       } catch (err) {
         return { ready: false, reason: err.message };
       }
@@ -1638,6 +1663,7 @@
         notInPalette: Object.keys(B.Blocks).filter((t) => !info.types.has(t) && !ALWAYS_AVAILABLE.includes(t) && !MUTATOR_HELPER.test(t)).slice(0, 400),
         workspace: stacks,
         truncated,
+        change: changeInfo(),
       };
     },
     // For working out how the Sequencer's own model point blocks behave: their definitions, the

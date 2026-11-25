@@ -8,7 +8,7 @@
 Skills are on Business, Enterprise and Edu workspaces. Custom GPTs retire on 11 Dec 2026: replace an old
 75F GPT with the skill rather than migrating it, so the instructions and block list are current.
 
-For a new sequence, just ask. To change an existing one, choose **Edit this sequence**, click **Download this sequence** and attach the file (or **Copy** and paste it), and ask.
+For a new sequence, just ask. To change an existing one, choose **Edit this sequence**, click **Copy sequence** and paste it (or **Download it as a file** and attach that), and ask.
 
 Without skills (e.g. a personal plan): choose **Another assistant**, put the copied instructions in a ChatGPT
 project and add the knowledge file to it, or attach the knowledge file (and, for an edit, the sequence download) in a normal chat, and

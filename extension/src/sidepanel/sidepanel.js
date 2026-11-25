@@ -12,7 +12,8 @@ const DEFAULTS = { mode: 'new', assistant: 'chatgpt', showTypes: true, setupDone
 const settings = { ...DEFAULTS, ...((await chrome.storage.local.get('settings')).settings || {}) };
 const saveSettings = (patch) => { Object.assign(settings, patch); return chrome.storage.local.set({ settings }); };
 
-const state = { busy: false, blockCount: null, ready: false, guideVersion: null };
+// change: what the page reports about edits ({ canvasId, changeSeq, changedAt }), or null on an older bridge.
+const state = { busy: false, blockCount: null, ready: false, guideVersion: null, change: null, undoAt: null, reviewing: false };
 
 // ------------------------------------------------------------------ plumbing
 
@@ -34,12 +35,16 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
-function show(node) {
-  $('log').append(node);
-  node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  return node;
+// One message at a time, at the top of the panel, so nothing new ever lands below the fold.
+function say(text, kind = '') {
+  const box = $('notice');
+  box.className = `msg ${kind}`;
+  $('noticeText').textContent = text;
+  box.hidden = false;
+  $('scroll').scrollTo({ top: 0, behavior: 'smooth' });
 }
-const say = (text, kind = '') => show(el('div', { class: `msg ${kind}` }, text));
+const clearNotice = () => { $('notice').hidden = true; };
+$('noticeClose').addEventListener('click', clearNotice);
 
 const pad = (n) => String(n).padStart(2, '0');
 const stamp = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
@@ -71,36 +76,67 @@ function closeSettings() {
 }
 $('openSettings').addEventListener('click', openSettings);
 $('bannerSettings').addEventListener('click', openSettings);
+$('changeSetup').addEventListener('click', openSettings);
 $('closeSettings').addEventListener('click', closeSettings);
 
 // -------------------------------------------------------------- main screen
+
+// Has the canvas changed since the last copy or download? Uses the page's edit counter; an older
+// bridge (page not reloaded since the update) only offers the block count.
+function copyIsStale() {
+  const last = settings.lastDownload;
+  if (!last) return true;
+  const c = state.change;
+  if (c?.canvasId) return last.canvasId !== c.canvasId || last.changeSeq !== c.changeSeq;
+  return state.blockCount != null && state.blockCount !== last.blocks;
+}
 
 function renderMain() {
   const mode = settings.mode;
   document.querySelectorAll('.seg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
   document.querySelectorAll('[data-show]').forEach((n) => { n.hidden = n.dataset.show !== mode; });
   $('pasteNum').textContent = mode === 'new' ? '2' : '3';
-  $('setupBanner').hidden = settings.setupDone;
-  $('describeHint').textContent = `Open ${whereToAsk()} and say what the sequence should do. Nothing to attach: it already knows every block.`;
-  $('guideVersion').textContent = state.guideVersion ? `Assistant guide v${state.guideVersion} · ` : '';
+  $('describeHint').textContent = `Open ${whereToAsk()} and say what the sequence should do. You don't need to attach anything.`;
+
+  // Setup is used once, so it sits at the bottom.
+  $('setupStrip').hidden = settings.setupDone;
+  $('setupLine').hidden = !settings.setupDone;
+  $('setupLineText').textContent = `Assistant: ${assistantName()}${state.guideVersion ? `, guide v${state.guideVersion}` : ''}`;
 
   const count = state.blockCount;
-  $('openMap').disabled = !state.ready || !count;
-  $('openSimulator').disabled = !state.ready || !count;
-  $('openMap').title = state.ready && !count ? 'The canvas is empty.' : 'What each output and register is worked out from, as a diagram';
+  const hasBlocks = state.ready && !!count;
+  $('openMap').disabled = !hasBlocks;
+  $('openSimulator').disabled = !hasBlocks;
+  $('toolsHint').hidden = hasBlocks || !state.ready;
+  $('openMap').title = hasBlocks ? 'What each output and register is worked out from, as a diagram' : '';
   const note = $('notEmptyNote');
   note.hidden = !(mode === 'new' && count > 0);
   note.textContent = `This canvas already has ${plural(count ?? 0, 'block')}. New blocks are added beside them; nothing is removed.`;
 
+  // Exactly one bright button: the next step.
   const last = settings.lastDownload;
-  let text = 'Not downloaded or copied yet.';
-  if (last) {
-    text = `Last ${last.how || 'downloaded'} ${clock(last.at)} · ${plural(last.blocks, 'block')}.`;
-    text += count != null && count !== last.blocks
-      ? ' The canvas has changed since, so do it again.'
-      : ' Do it again after every apply: block references change.';
-  }
-  $('lastDownload').textContent = text;
+  const stale = copyIsStale();
+  const answered = !!$('answer').value.trim();
+  const copyNext = mode === 'edit' && stale && !answered && count !== 0;
+  const copy = $('copySequence');
+  copy.classList.toggle('primary', copyNext);
+  copy.classList.toggle('fresh', !stale);
+  copy.disabled = state.ready && count === 0;
+  $('copyLabel').textContent = stale ? 'Copy sequence' : `Copied ${clock(last.at)} · Copy again`;
+  $('reviewBtn').classList.toggle('primary', !copyNext);
+
+  const cs = $('copyState');
+  cs.classList.toggle('changed', stale && !!last);
+  if (state.ready && count === 0) cs.textContent = 'The canvas is empty. To build one, choose New sequence above.';
+  else if (!last) cs.textContent = 'Copy it, then paste it into your assistant.';
+  else if (!stale) cs.textContent = 'No changes since. Copy again if you start a new chat.';
+  else if (state.change?.changedAt && last.canvasId === state.change.canvasId) cs.textContent = `The canvas changed at ${clock(state.change.changedAt)}. Copy it again for your assistant.`;
+  else cs.textContent = `Last copied ${clock(last.at)}. The canvas may have changed since, so copy it again.`;
+
+  $('undoLabel').textContent = $('undoBtn').disabled ? 'Nothing to undo yet' : `Undo ${state.undoAt ? `${clock(state.undoAt)} ` : 'last '}change`;
+
+  $('steps').hidden = state.reviewing;
+  $('foldBar').hidden = !state.reviewing;
 }
 
 document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', async () => {
@@ -114,17 +150,27 @@ async function refreshStatus() {
     const s = await bg('status');
     state.ready = s.ready;
     state.blockCount = s.ready ? s.blockCount : null;
+    state.change = s.ready && s.canvasId ? { canvasId: s.canvasId, changeSeq: s.changeSeq, changedAt: s.changedAt } : null;
     dot.className = `dot ${s.ready ? 'ready' : 'down'}`;
-    $('statusText').textContent = s.ready ? `Connected to Site Sequencer · ${plural(s.blockCount, 'block')} on canvas` : s.reason;
+    $('statusText').textContent = !s.ready ? s.reason
+      : s.blockCount ? `Connected · ${plural(s.blockCount, 'block')} on canvas` : 'Connected · canvas is empty';
   } catch (err) {
     state.ready = false;
     state.blockCount = null;
+    state.change = null;
     dot.className = 'dot down';
     $('statusText').textContent = /Open the 75F/.test(err.message) ? 'Open a Site Sequencer tab in this window to start.' : err.message;
   }
   renderMain();
 }
 chrome.tabs.onActivated.addListener(refreshStatus);
+// Edits on the canvas show up within a couple of seconds, without switching tabs.
+let polling = false;
+setInterval(async () => {
+  if (polling || document.hidden || $('mainView').hidden) return;
+  polling = true;
+  try { await refreshStatus(); } finally { polling = false; }
+}, 2000);
 chrome.tabs.onUpdated.addListener((_id, info) => { if (info.status === 'complete') refreshStatus(); });
 
 // Most assistants handle an attached file better than a long paste: chat boxes can cut long
@@ -133,32 +179,30 @@ const LONG_PASTE = 100000;
 
 async function sequenceExport() {
   const ctx = await bg('exportData');
-  return { text: buildExport(ctx, { includeSequence: true, guide: null }), blocks: ctx.meta.blockCount ?? state.blockCount ?? 0 };
+  return { text: buildExport(ctx, { includeSequence: true, guide: null }), blocks: ctx.meta.blockCount ?? state.blockCount ?? 0, change: ctx.change };
 }
 
-async function remember(how, blocks) {
-  await saveSettings({ lastDownload: { at: new Date().toISOString(), blocks, how } });
+async function remember(how, blocks, change) {
+  if (change?.canvasId) state.change = change;
+  await saveSettings({ lastDownload: { at: new Date().toISOString(), blocks, how, canvasId: change?.canvasId ?? null, changeSeq: change?.changeSeq ?? null } });
   renderMain();
 }
 
 $('downloadSequence').addEventListener('click', async () => {
   try {
-    const { text, blocks } = await sequenceExport();
+    const { text, blocks, change } = await sequenceExport();
     download(text, `75f-sequencer-sequence-${stamp()}.md`);
-    await remember('downloaded', blocks);
+    await remember('downloaded', blocks, change);
   } catch (err) { say(err.message, 'error'); }
 });
 
 $('copySequence').addEventListener('click', async () => {
-  const btn = $('copySequence');
   try {
-    const { text, blocks } = await sequenceExport();
+    const { text, blocks, change } = await sequenceExport();
     await navigator.clipboard.writeText(text);
-    await remember('copied', blocks);
-    btn.textContent = 'Copied';
-    setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+    await remember('copied', blocks, change);
     if (text.length > LONG_PASTE) {
-      say(`Copied ${Math.round(text.length / 1000)}k characters. That's long for a chat box: if your assistant cuts it off or only skims it, use Download this sequence and attach the file instead.`);
+      say(`Copied ${Math.round(text.length / 1000)}k characters. That's long for a chat box: if your assistant cuts it off or only skims it, use Download it as a file and attach that instead.`);
     }
   } catch (err) { say(err.message, 'error'); }
 });
@@ -253,23 +297,60 @@ function changeRow(line) {
       settings.showTypes && line.types?.length ? el('div', { class: 'types' }, line.types.join(' · ')) : null));
 }
 
+// ---- the newest answer stays at the top; older ones fold into "Earlier answers" --------------
+
+let current = null; // { card, summary, at }
+const MAX_EARLIER = 10;
+
+function present(card, summary, { fold }) {
+  retireCurrent('Not applied', 'outcome-no');
+  const at = new Date().toISOString();
+  card.querySelector('.review-kicker').textContent = `NEWEST ANSWER · ${clock(at)}`;
+  $('current').replaceChildren(card);
+  current = { card, summary, at };
+  state.reviewing = fold;
+  $('foldText').textContent = `Answer pasted ${clock(at)}`;
+  renderMain();
+  $('scroll').scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function retireCurrent(outcome, cls) {
+  if (!current) return;
+  const { card, summary, at } = current;
+  current = null;
+  card.querySelectorAll('.review-actions, .review-kicker').forEach((n) => n.remove());
+  $('earlierList').prepend(el('details', { class: 'past' },
+    el('summary', {}, el('span', { class: cls }, outcome), ` · ${clock(at)} · ${summary}`), card));
+  [...$('earlierList').children].slice(MAX_EARLIER).forEach((n) => n.remove());
+  $('earlier').hidden = false;
+  $('current').replaceChildren();
+  state.reviewing = false;
+  renderMain();
+}
+
+$('showSteps').addEventListener('click', () => {
+  state.reviewing = false;
+  renderMain();
+  $('answer').focus();
+});
+
 function problemsCard(errors) {
   const stale = errors.some((e) => /unknown block/.test(e));
-  const copyBtn = el('button', { class: 'primary full', type: 'button' }, 'Copy message for your assistant');
+  const copyBtn = el('button', { class: 'primary full-span', type: 'button' }, 'Copy message for your assistant');
   copyBtn.addEventListener('click', async () => {
     await navigator.clipboard.writeText(repairMessage(errors));
     copyBtn.textContent = 'Copied. Paste it into the same chat';
   });
   return el('section', { class: 'review bad', 'aria-label': 'Problems' },
     el('div', { class: 'review-head' },
+      el('span', { class: 'review-kicker' }),
       el('strong', {}, `This answer can't be applied · ${plural(errors.length, 'problem')}`),
-      el('span', { class: 'hint' }, 'Nothing on the canvas was changed.')),
-    el('ol', { class: 'problems' }, errors.map((e) => el('li', {},
-      el('div', {}, friendlyError(e), settings.showTypes ? el('div', { class: 'types' }, e) : null)))),
-    el('div', { class: 'review-foot stack' }, copyBtn,
-      el('p', { class: 'hint' }, stale
-        ? 'Paste it into the same chat, and attach a fresh download of this sequence too.'
-        : 'Paste it into the same chat. The assistant will send a corrected answer.')));
+      el('span', { class: 'hint' }, stale
+        ? 'Nothing on the canvas was changed. Paste the message into the same chat, with a fresh copy of this sequence.'
+        : 'Nothing on the canvas was changed. Paste the message into the same chat; the assistant will send a corrected answer.'),
+      el('div', { class: 'review-actions' }, copyBtn)),
+    el('ol', { class: 'problems review-list' }, errors.map((e) => el('li', {},
+      el('div', {}, friendlyError(e), settings.showTypes ? el('div', { class: 'types' }, e) : null)))));
 }
 
 function reviewCard(plan, result) {
@@ -300,37 +381,45 @@ function reviewCard(plan, result) {
   mapBtn?.addEventListener('click', () => openMap({ kind: 'change', ...result.map, reply: plan.reply !== 'Plan pasted in.' ? plan.reply : '' }));
   const applyBtn = el('button', { class: removes ? 'danger' : 'primary', type: 'button' },
     removes ? `Apply (removes ${removes})` : 'Apply to canvas');
-  const foot = el('div', { class: 'review-foot' }, mapBtn, cancel, applyBtn);
+  const actions = el('div', { class: 'review-actions' }, cancel, applyBtn);
   const card = el('section', { class: 'review', 'aria-label': 'Changes to review' },
-    el('div', { class: 'review-head' }, el('strong', {}, head),
-      plan.reply && plan.reply !== 'Plan pasted in.' ? el('span', { class: 'hint' }, plan.reply) : null),
-    body,
-    notes.length ? el('div', { class: 'warns' }, notes.map((n) => el('p', {}, n))) : null,
-    foot);
+    el('div', { class: 'review-head' },
+      el('span', { class: 'review-kicker' }),
+      el('strong', {}, head),
+      plan.reply && plan.reply !== 'Plan pasted in.' ? el('span', { class: 'hint' }, plan.reply) : null,
+      actions,
+      mapBtn),
+    el('div', { class: 'review-list' }, body,
+      notes.length ? el('div', { class: 'warns' }, notes.map((n) => el('p', {}, n))) : null));
 
-  cancel.addEventListener('click', () => foot.replaceWith(el('div', { class: 'done' }, 'Cancelled. Nothing was changed.')));
-  applyBtn.addEventListener('click', () => applyPlan(plan, foot));
-  return card;
+  cancel.addEventListener('click', () => {
+    retireCurrent('Cancelled', 'outcome-no');
+    say('Cancelled. Nothing on the canvas was changed.');
+  });
+  applyBtn.addEventListener('click', () => applyPlan(plan, actions));
+  return { card, summary: head };
 }
 
-async function applyPlan(plan, foot) {
-  foot.querySelectorAll('button').forEach((b) => (b.disabled = true));
+async function applyPlan(plan, actions) {
+  actions.querySelectorAll('button').forEach((b) => (b.disabled = true));
   try {
     const result = await bg('apply', { actions: plan.actions });
     const next = settings.mode === 'edit'
-      ? 'Download or copy this sequence again before the next request.'
+      ? 'Copy the sequence again before the next request.'
       : 'To keep working on it, switch to Edit this sequence.';
     const extra = result.warnings.length ? `\n${result.warnings.join('\n')}` : '';
     // Round 1 of a model-linked sequence: the person picks the model, then sends the sequence back.
     const addsModel = plan.actions.some((a) => a.op === 'create' && a.type === 'model_block');
     const msg = addsModel
-      ? `Applied ${plural(result.applied, 'step')}. Next: pick your model in the Select Model block on the canvas, so its points load. Then, in Edit this sequence, copy or download the sequence and send it to your assistant for the rest of the plan.${extra}`
+      ? `Applied ${plural(result.applied, 'step')}. Next: pick your model in the Select Model block on the canvas, so its points load. Then, in Edit this sequence, copy the sequence and send it to your assistant for the rest of the plan.${extra}`
       : `Applied ${plural(result.applied, 'step')}. ${next}${extra}`;
-    foot.replaceWith(el('div', { class: 'done' }, msg));
     $('undoBtn').disabled = false;
+    state.undoAt = new Date().toISOString();
+    retireCurrent('Applied', 'outcome-ok');
+    say(msg, 'ok');
     refreshStatus();
   } catch (err) {
-    foot.querySelectorAll('button').forEach((b) => (b.disabled = false));
+    actions.querySelectorAll('button').forEach((b) => (b.disabled = false));
     say(err.message, 'error');
   }
 }
@@ -348,6 +437,7 @@ $('composer').addEventListener('submit', async (e) => {
   e.preventDefault();
   const text = $('answer').value.trim();
   if (!text || state.busy) return;
+  clearNotice();
 
   const found = parseFindings(text);
   if (found.length) {
@@ -362,32 +452,37 @@ $('composer').addEventListener('submit', async (e) => {
     return;
   }
   if (plan.error) {
-    show(problemsCard([plan.error]));
+    present(problemsCard([plan.error]), "Couldn't be read", { fold: false });
     await record([{ source: 'extension', kind: 'rejected', text: 'The plan\'s JSON could not be read at all.' }]);
     return;
   }
 
   state.busy = true;
   $('reviewBtn').disabled = true;
-  $('reviewBtn').textContent = 'Checking…';
+  $('reviewLabel').textContent = 'Checking…';
   try {
     const result = await check(plan.actions);
     await record([
       ...plan.fixes.map((f) => ({ source: 'extension', kind: 'repaired', text: `Assistant format slip: ${f}.` })),
       ...result.errors.map((err) => ({ source: 'extension', kind: 'rejected', text: err })),
     ]);
-    if (result.errors.length) show(problemsCard(result.errors));
+    if (result.errors.length) present(problemsCard(result.errors), plural(result.errors.length, 'problem'), { fold: false });
     else if (!plan.actions.length) say('The answer has no changes, so there is nothing to apply.');
-    else show(reviewCard(plan, result));
+    else {
+      const { card, summary } = reviewCard(plan, result);
+      present(card, summary, { fold: true });
+    }
     $('answer').value = '';
   } catch (err) {
     say(err.message, 'error');
   } finally {
     state.busy = false;
     $('reviewBtn').disabled = false;
-    $('reviewBtn').textContent = 'Review changes';
+    $('reviewLabel').textContent = 'Review changes';
+    renderMain();
   }
 });
+$('answer').addEventListener('input', () => renderMain());
 
 $('answer').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('composer').requestSubmit(); }
@@ -404,10 +499,12 @@ $('undoBtn').addEventListener('click', async () => {
       result = await bg('undo', { force: true });
     }
     say('Undone. The canvas is back to how it was before the last Copilot change.', 'ok');
+    state.undoAt = null;
     refreshStatus();
   } catch (err) {
     say(err.message, 'error');
     btn.disabled = /no Copilot change/.test(err.message);
+    renderMain();
   }
 });
 
