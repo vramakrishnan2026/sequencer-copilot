@@ -1643,15 +1643,23 @@
   // own generator (the one that knows the 75F blocks) and run it on the live canvas: this is
   // read-only and is what the editor itself does to produce the controller's program.
   function findPythonGenerator(B) {
-    const looksRight = (g) => !!g && typeof g === 'object' && typeof g.workspaceToCode === 'function';
+    // Pages hold references to other frames (window.top, frames[n]); reading anything from a
+    // cross-origin one throws, so every check is guarded and windows are skipped.
+    const isWindowLike = (v) => { try { return v === window || v.window === v; } catch { return true; } };
+    const looksRight = (g) => {
+      try { return !!g && typeof g === 'object' && !isWindowLike(g) && typeof g.workspaceToCode === 'function'; } catch { return false; }
+    };
     // Blockly 10 keeps block generators in forBlock; older code assigns them on the generator.
-    const knows75f = (g) => ['model_block', 'conn_mod_get_universal_input_value']
-      .some((t) => typeof g.forBlock?.[t] === 'function' || typeof g[t] === 'function');
-    const isPython = (g) => /python/i.test(g.name_ || g.name || '') || typeof g.forBlock?.controls_if === 'function';
+    const knows75f = (g) => { try {
+      return ['model_block', 'conn_mod_get_universal_input_value']
+        .some((t) => typeof g.forBlock?.[t] === 'function' || typeof g[t] === 'function');
+    } catch { return false; } };
+    const isPython = (g) => { try { return /python/i.test(g.name_ || g.name || '') || typeof g.forBlock?.controls_if === 'function'; } catch { return false; } };
     const candidates = [];
     const add = (v) => {
+      if (!v || isWindowLike(v)) return;
       if (looksRight(v)) candidates.push(v);
-      if (v && typeof v === 'object') {
+      if (typeof v === 'object') {
         for (const inner of ['pythonGenerator', 'Python', 'generator', 'default']) {
           let g;
           try { g = v[inner]; } catch { continue; }
@@ -1663,7 +1671,7 @@
     for (const key of Object.getOwnPropertyNames(window)) {
       let v;
       try { v = window[key]; } catch { continue; }
-      if (v && typeof v === 'object' && !(v instanceof Node)) add(v);
+      try { if (v && typeof v === 'object' && !(v instanceof Node)) add(v); } catch { /* cross-origin or hostile */ }
     }
     // The 75F app bundles its generator with webpack: look through modules it has already loaded
     // (reading their exports only; nothing new is run).
@@ -1674,7 +1682,9 @@
         const exp = req.c[id]?.exports;
         if (!exp || (typeof exp !== 'object' && typeof exp !== 'function')) continue;
         add(exp);
-        for (const k of Object.keys(exp).slice(0, 200)) {
+        let keys = [];
+        try { keys = Object.keys(exp).slice(0, 200); } catch { continue; }
+        for (const k of keys) {
           let v;
           try { v = exp[k]; } catch { continue; }
           add(v);

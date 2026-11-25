@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "75F Sequencer Copilot",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Helps AI assistants build logic on the 75F Site Sequencer: applies pasted plans, draws logic maps and simulates the sequence.",
   "author": "Vinay",
   "icons": {
