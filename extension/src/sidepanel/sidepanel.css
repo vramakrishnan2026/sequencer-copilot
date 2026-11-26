@@ -292,3 +292,10 @@ label.check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px;
 .live-chart figcaption { display: flex; justify-content: space-between; gap: 6px; font-size: 11px; color: var(--muted); margin-top: 3px; }
 .live-log { max-height: 220px; overflow: auto; font: 11px/1.4 var(--mono); background: var(--plate); padding: 8px; border-radius: var(--radius-sm); margin: 0; white-space: pre-wrap; }
 .live-card .error { color: var(--danger); }
+.live-main { display: flex; flex-direction: column; gap: 10px; }
+.live-save { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line-soft); padding-top: 12px; }
+.live-save h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.live-folder { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.live-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.live-field input { min-height: 34px; padding: 0 8px; font: inherit; }
+.live-save p.error { margin: 0; color: var(--danger); font-size: 13px; }

@@ -1,5 +1,6 @@
 import { createLogReader, summarize, thin, usedShare } from './livelog.js';
 import { createSerialLink } from './serial-link.js';
+import { cleanName, createLogFile, defaultName, ensureAccess, loadFolder, saveFolder, stamp } from './log-file.js';
 
 /**
  * "Controller on USB" card in the Memory check: reads the controller's log live over USB, records
@@ -49,10 +50,17 @@ export function matchCanvas(seq, canvas) {
 }
 
 export function createLiveView(root, { canvas = () => null } = {}) {
+  // The card has two parts: the live readings (redrawn often) and the save-to-file controls
+  // (kept as they are, so typing a file name isn't interrupted by a redraw).
+  const mainBox = el('div', { class: 'live-main' });
+  const saveBox = el('div', { class: 'live-save' });
+  root.replaceChildren(el('section', { class: 'card heap-card live-card' }, mainBox, saveBox));
+
   let status = { state: 'off', baud: 115200 };
   let error = '';
   let saved = [];          // earlier recordings: { id, summary, runs: [[t, used, maxFree]] }
-  let tail = [];           // last lines of the raw log
+  let tail = [];           // last lines of the raw log, for "Show log"
+  let backlog = [];        // last lines with their time, written first when saving starts
   let lineBuf = '';
   let showLog = false;
   let dirty = false;
@@ -70,10 +78,22 @@ export function createLiveView(root, { canvas = () => null } = {}) {
       lineBuf += t;
       const lines = lineBuf.split('\n');
       lineBuf = lines.pop();
-      if (lines.length) tail = tail.concat(lines.map((x) => x.replace(/\r$/, ''))).slice(-200);
+      if (lines.length) {
+        const clean = lines.map((x) => x.replace(/\r$/, ''));
+        tail = tail.concat(clean).slice(-200);
+        const at = stamp();
+        backlog = backlog.concat(clean.map((x) => `[${at}] ${x}`)).slice(-5000);
+        for (const x of clean) logFile.line(x);
+      }
       if (showLog) schedule();
     },
-    onStatus: (s) => { status = s; if (s.state !== 'connected') store(reader.session); schedule(); },
+    onStatus: (s) => {
+      if (s.state !== status.state) {
+        if (s.state === 'waiting') logFile.note('Controller disconnected (USB); waiting for it to come back');
+        else if (s.state === 'connected') logFile.note('Controller connected');
+        else if (s.state === 'off') logFile.note('Disconnected in the side panel');
+      }
+      status = s; if (s.state !== 'connected') store(reader.session); schedule(); },
   });
 
   // --------------------------------------------------------------------------------- storage
@@ -243,10 +263,83 @@ export function createLiveView(root, { canvas = () => null } = {}) {
           render();
         } }, 'Delete earlier recordings')));
     }
-    root.replaceChildren(el('section', { class: 'card heap-card live-card' }, parts));
+    mainBox.replaceChildren(...parts);
   }
 
+  // ---------------------------------------------------------------------------- save to file
+  const logFile = createLogFile({ onState: () => updateSave() });
+  let folder = null;
+  const folderLabel = el('span', { class: 'live-folder' });
+  const nameInput = el('input', { type: 'text', 'aria-label': 'File name', spellcheck: 'false', value: defaultName() });
+  const times = el('input', { type: 'checkbox', checked: true });
+  const startBtn = el('button', { type: 'button' }, 'Start saving');
+  const folderBtn = el('button', { type: 'button' }, 'Choose folder…');
+  const saveMsg = el('p', { class: 'hint', role: 'status' });
+  chrome.storage.local.get('heapLogName').then(({ heapLogName }) => { if (heapLogName) nameInput.value = heapLogName; });
+  nameInput.addEventListener('change', () => chrome.storage.local.set({ heapLogName: nameInput.value }));
+
+  async function pickFolder() {
+    saveMsg.textContent = '';
+    if (!('showDirectoryPicker' in window)) { saveMsg.textContent = 'This browser can\'t save to a folder. Use Chrome or Edge on a desktop computer.'; return; }
+    try {
+      const dir = await window.showDirectoryPicker({ id: 'controller-logs', mode: 'readwrite' });
+      await saveFolder(dir);
+      folder = dir;
+    } catch (err) {
+      if (err.name === 'AbortError') return; // closed the picker
+      // Chrome may refuse the picker in the side panel: choose the folder in a tab instead.
+      chrome.tabs.create({ url: chrome.runtime.getURL('src/heap/connect.html?folder=1') });
+      saveMsg.textContent = 'A tab has opened: choose the folder there. This card picks it up as soon as you do.';
+    }
+    updateSave();
+  }
+  chrome.storage.onChanged.addListener(async (changes, area) => {
+    if (area === 'local' && changes.heapLogFolderAt?.newValue) { folder = await loadFolder(); saveMsg.textContent = ''; updateSave(); }
+  });
+  folderBtn.addEventListener('click', pickFolder);
+  startBtn.addEventListener('click', async () => {
+    saveMsg.textContent = '';
+    if (logFile.state.on) { await logFile.stop(); updateSave(); return; }
+    if (!folder) { await pickFolder(); if (!folder) return; }
+    try {
+      if (!(await ensureAccess(folder))) { saveMsg.textContent = 'Chrome needs your permission to write to that folder. Press Start saving and allow it.'; return; }
+      nameInput.value = cleanName(nameInput.value);
+      chrome.storage.local.set({ heapLogName: nameInput.value });
+      await logFile.start(folder, nameInput.value, times.checked ? backlog : backlog.map((x) => x.replace(/^\[[^\]]+\] /, '')), { times: times.checked });
+    } catch (err) {
+      saveMsg.textContent = err.message;
+    }
+    updateSave();
+  });
+
+  const fmtSize = (b) => (b < 1024 ? `${b} bytes` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`);
+  function updateSave() {
+    const st = logFile.state;
+    folderLabel.textContent = folder ? folder.name : 'No folder chosen';
+    nameInput.disabled = st.on;
+    times.disabled = st.on;
+    folderBtn.disabled = st.on;
+    startBtn.textContent = st.on ? 'Stop saving' : 'Start saving';
+    startBtn.className = st.on ? '' : 'primary';
+    const now = st.on
+      ? `Saving to ${folder?.name ?? '?'}\\${st.file}: ${st.lines.toLocaleString()} lines, ${fmtSize(st.bytes)} written. New lines are added every 5 seconds.`
+      : st.file ? `Stopped. Saved in ${folder?.name ?? '?'}\\${st.file}.` : '';
+    saveMsg.textContent = st.error || now || saveMsg.textContent;
+    saveMsg.className = st.error ? 'error' : st.on ? 'hint ok' : 'hint';
+  }
+  saveBox.replaceChildren(
+    el('h3', { class: 'heap-sub' }, 'Save the log to a file'),
+    el('p', { class: 'hint' }, 'Keeps everything the controller sends, for debugging, so you don\'t need Tera Term alongside. Pick the folder once; an existing file with the same name is added to.'),
+    el('div', { class: 'live-row' }, folderBtn, folderLabel),
+    el('label', { class: 'live-field' }, el('span', {}, 'File name'), nameInput),
+    el('label', { class: 'check' }, times, el('span', {}, 'Add the time to each line')),
+    el('div', { class: 'live-row' }, startBtn),
+    saveMsg);
+  loadFolder().then((f) => { folder = f || null; updateSave(); });
+
+
   loadSaved().then(render);
+  window.addEventListener('pagehide', () => { logFile.stop(); });
   setInterval(() => { if (status.state === 'connected') schedule(); }, 10000);
   return { render };
 }
